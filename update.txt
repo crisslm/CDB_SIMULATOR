@@ -1,0 +1,18 @@
+#### 1. Rodar a aplicação (testa e abre a interface gráfica):
+
+    ./project.sh run
+
+  │ Se quiser rodar o modo terminal (CLI):
+  │
+  │   ./project.sh run cli
+  ──────
+  #### 2. Atualizar e recompilar o executável:
+
+    MSYS_NO_PATHCONV=1 taskkill /IM CDB_Simulator.exe /F
+    ./project.sh update
+
+  (Executa a suíte de testes, recompila o executável e já publica a nova versão na Área de Trabalho)
+  ──────
+  #### 3. Rodar apenas os testes:
+
+    ./project.sh test

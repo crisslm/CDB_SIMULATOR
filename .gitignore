@@ -1,0 +1,26 @@
+# Python bytecode e caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Ambientes virtuais
+venv/
+env/
+.venv/
+
+# PyInstaller / Builds
+build/
+dist/
+*.spec.bak
+
+# IDEs e editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini

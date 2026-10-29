@@ -1,0 +1,4 @@
+customtkinter>=6.0.0
+matplotlib>=3.8.0
+pytest>=8.0.0
+watchdog>=6.0.0
