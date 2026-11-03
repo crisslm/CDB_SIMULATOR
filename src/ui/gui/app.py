@@ -13,6 +13,7 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
 from src.services.simulator_service import InvestmentSimulatorService, MAX_SIMULATION_MONTHS
+from src.services.financial_service import FinancialService
 from src.domain.models import SimulationParams
 from src.domain.strategies import CompoundInterestStrategy, CDIStrategy
 from src.ui.gui.chart import InvestmentChart
@@ -24,6 +25,7 @@ from src.ui.gui.components import (
     formatar_moeda,
     formatar_tempo,
 )
+from src.ui.gui.financial.dashboard import FinancialDashboard
 
 
 class ModernAppGUI(ctk.CTk):
@@ -37,10 +39,12 @@ class ModernAppGUI(ctk.CTk):
     PALETTES = PALETTES
     THEME_FILE = Path.home() / ".cdb_simulator_theme.json"
 
-    def __init__(self, simulator_service: InvestmentSimulatorService = None):
+    def __init__(self, simulator_service: InvestmentSimulatorService = None, financial_service: FinancialService = None):
         super().__init__()
 
         self.service = simulator_service or InvestmentSimulatorService()
+        self.financial_service = financial_service or FinancialService()
+        self.active_section = "simulator"
         self.is_mobile_layout = None
         self._last_width = 0
         self._last_height = 0
@@ -61,10 +65,12 @@ class ModernAppGUI(ctk.CTk):
             fg_color="#F9F9FB",
             corner_radius=0
         )
-        self.root_scroll.pack(fill="both", expand=True)
 
+        self._build_navigation()
+        self.root_scroll.pack(fill="both", expand=True)
         self._build_sidebar()
         self._build_main_area()
+        self.financial_dashboard = FinancialDashboard(self.root_scroll, self.financial_service, self.PALETTES[self.theme_mode])
 
         # Monitoramento contínuo de redimensionamento da janela
         self.bind("<Configure>", self._on_window_resize)
@@ -72,6 +78,41 @@ class ModernAppGUI(ctk.CTk):
         # Dispara layout inicial e aplica o tema salvo (renderiza a simulação com as cores do tema)
         self._apply_responsive_layout(1160)
         self._apply_theme(self.theme_mode)
+
+    def _build_navigation(self):
+        """Navegação leve entre a projeção de CDB e o controle pessoal."""
+        pal = self.PALETTES[self.theme_mode]
+        self.frame_navigation = ctk.CTkFrame(self, fg_color=pal["surface"], height=58, corner_radius=0)
+        self.frame_navigation.pack(fill="x")
+        self.nav_simulator = PillButton(self.frame_navigation, text="Simulador CDB", command=lambda: self._show_section("simulator"), variant="secondary", width=145)
+        self.nav_financial = PillButton(self.frame_navigation, text="Controle Financeiro", command=lambda: self._show_section("financial"), variant="secondary", width=170)
+        self.nav_simulator.pack(side="left", padx=(18, 6), pady=11)
+        self.nav_financial.pack(side="left", padx=6, pady=11)
+        self.nav_simulator.apply_theme(pal)
+        self.nav_financial.apply_theme(pal)
+
+    def _show_section(self, section: str):
+        self.active_section = section
+        self.frame_sidebar.grid_forget()
+        self.frame_main.grid_forget()
+        self.financial_dashboard.grid_forget()
+        width = max(self.winfo_width(), self.BREAKPOINT_MOBILE)
+        if section == "financial":
+            self.root_scroll.grid_columnconfigure(0, weight=1)
+            self.root_scroll.grid_columnconfigure(1, weight=0)
+            self.financial_dashboard.grid(row=0, column=0, columnspan=2, padx=18 if width >= self.BREAKPOINT_MOBILE else 12, pady=18 if width >= self.BREAKPOINT_MOBILE else 12, sticky="nsew")
+            self.financial_dashboard.apply_layout(width)
+            self.financial_dashboard.refresh()
+        else:
+            self.is_mobile_layout = None
+            self._apply_responsive_layout(width)
+        self._update_navigation()
+
+    def _update_navigation(self):
+        pal = self.PALETTES[self.theme_mode]
+        for button, is_active in ((self.nav_simulator, self.active_section == "simulator"), (self.nav_financial, self.active_section == "financial")):
+            button._variant = "primary" if is_active else "secondary"
+            button.apply_theme(pal)
 
     def _build_sidebar(self):
         """Constrói o formulário de configuração com acabamento limpo e moderno."""
@@ -355,6 +396,7 @@ class ModernAppGUI(ctk.CTk):
         self.frame_cards.configure(fg_color="transparent")
         self.frame_chart_card.configure(fg_color=pal["surface"], border_color=pal["border"])
         self.frame_bar_card.configure(fg_color=pal["surface"], border_color=pal["border"])
+        self.frame_navigation.configure(fg_color=pal["surface"])
 
         # Textos
         self.lbl_header.configure(text_color=pal["text"])
@@ -392,6 +434,9 @@ class ModernAppGUI(ctk.CTk):
         # Gráficos (re-renderiza com as cores do novo tema)
         self.chart_controller.apply_theme(pal)
         self.on_simulate_click()
+        if hasattr(self, "financial_dashboard"):
+            self.financial_dashboard.apply_theme(pal)
+        self._update_navigation()
 
         # Persiste a escolha do usuário
         self._save_theme()
@@ -504,6 +549,13 @@ class ModernAppGUI(ctk.CTk):
         Alterna dinamicamente entre layout Mobile (coluna vertical fluida)
         e layout Desktop (painel lateral + área principal expandida).
         """
+        if self.active_section == "financial":
+            self.frame_sidebar.grid_forget()
+            self.frame_main.grid_forget()
+            self.financial_dashboard.grid(row=0, column=0, columnspan=2, padx=18 if window_width >= self.BREAKPOINT_MOBILE else 12, pady=18 if window_width >= self.BREAKPOINT_MOBILE else 12, sticky="nsew")
+            self.financial_dashboard.apply_layout(window_width)
+            return
+
         is_mobile = window_width < self.BREAKPOINT_MOBILE
 
         if is_mobile != self.is_mobile_layout:

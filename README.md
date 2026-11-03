@@ -66,6 +66,7 @@ A aplicação conta com arquitetura responsiva que se molda dinamicamente ao tam
 - **Duas Interfaces de Acesso:**
   - **GUI Moderna:** Interface desktop com tema **Clean Light / Fintech** e suporte completo a **Modo Escuro** (Dark Mode), com alternância via botão no cabeçalho da barra lateral e persistência da preferência entre reinicializações (`~/.cdb_simulator_theme.json`). Toda a paleta (fundo, superfícies, inputs, cards, badges, botões, gráficos e legendas) se adapta dinamicamente ao tema escolhido.
   - **CLI (Terminal):** Modo console direto com validação de limites e suporte completo a Prefixado e CDI.
+- **Controle Financeiro persistente:** Nova seção da GUI para registrar receitas, despesas e aportes, com categorias personalizáveis, filtros temporais, histórico editável e gráficos dinâmicos. Os dados ficam em SQLite local, fora do repositório.
 - **Automação Completa:** Scripts unificados (`.bat`, `.ps1`, `.sh`) com pipeline que só permite recompilar ou rodar o software se todos os testes unitários passarem.
 
 ---
@@ -118,7 +119,10 @@ CDB Simulator/
 │   │
 │   ├── services/                         # Casos de uso e orquestração financeira
 │   │   ├── __init__.py
-│   │   └── simulator_service.py          # Lógica de simulação, IR e metas analíticas
+│   │   ├── simulator_service.py          # Lógica de simulação, IR e metas analíticas
+│   │   └── financial_service.py          # Casos de uso, filtros e agregações financeiras
+│   ├── repositories/                     # Adaptadores de persistência
+│   │   └── financial_repository.py       # Banco SQLite versionado do Controle Financeiro
 │   │
 │   └── ui/                               # Camada de apresentação
 │       ├── __init__.py
@@ -382,6 +386,17 @@ python publish.py --dest PATH  # publica em outra pasta
 ---
 
 ## 12. Histórico de Melhorias e Correções
+
+- **Controle Financeiro:** adicionada seção independente na GUI, acessível pela barra superior. Permite criar receitas, despesas e investimentos; editar ou excluir lançamentos; filtrar por tipo, categoria e período; e gerenciar categorias com arquivamento seguro quando há lançamentos associados. Os indicadores usam centavos inteiros, e os gráficos reutilizam a mesma `Figure`/canvas Matplotlib com `draw_idle`.
+
+### Como usar o Controle Financeiro
+
+1. Abra `main_gui.py` e selecione **Controle Financeiro** na barra superior.
+2. Registre um lançamento informando tipo, descrição, valor, categoria e data. Valores como `1250,50` ou `R$ 1.250,50` são aceitos.
+3. Use **Gerenciar categorias** para adicionar, editar ou remover categorias. Uma categoria usada será arquivada, nunca apagada silenciosamente.
+4. Escolha o período, tipo e categoria nos filtros. Os cards, o gráfico de rosca, o gráfico de barras/evolução mensal e o histórico são atualizados na hora.
+
+O banco é criado em `~/.cdb_simulator/financial.sqlite3`, portanto não é incluído no Git nem perdido ao fechar a aplicação. A suíte inclui `tests/test_financial.py`, cobrindo cálculos, persistência, filtros, agregações, edição, exclusão e receita zero.
 
 - **Interface Mobile-Friendly e Layout Responsivo (UX):**
   - Implementado sistema reativo com detecção de redimensionamento em tempo real.

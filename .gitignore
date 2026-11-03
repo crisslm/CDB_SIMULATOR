@@ -24,3 +24,7 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Dados privados do Controle Financeiro (SQLite é salvo fora do repositório)
+*.sqlite
+*.sqlite3
