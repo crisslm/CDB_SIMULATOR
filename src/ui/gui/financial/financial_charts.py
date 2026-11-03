@@ -77,3 +77,13 @@ class FinancialCharts:
             self.bar_ax.annotate(format_cents(amount), (bar.get_x() + bar.get_width()/2, bar.get_height()),
                 xytext=(0, 4), textcoords="offset points", ha="center", color=self.palette["text_muted"], fontsize=7)
         self.bar_fig.tight_layout(); self.bar_canvas.draw_idle()
+
+    def dispose(self) -> None:
+        """Fecha recursos Matplotlib antes de destruir a janela Tk."""
+        for canvas in (self.donut_canvas, self.bar_canvas):
+            try:
+                canvas.get_tk_widget().destroy()
+            except Exception:
+                pass
+        plt.close(self.donut_fig)
+        plt.close(self.bar_fig)

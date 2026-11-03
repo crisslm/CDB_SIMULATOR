@@ -71,6 +71,8 @@ class ModernAppGUI(ctk.CTk):
         self._build_sidebar()
         self._build_main_area()
         self.financial_dashboard = FinancialDashboard(self.root_scroll, self.financial_service, self.PALETTES[self.theme_mode])
+        self._is_closing = False
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Monitoramento contínuo de redimensionamento da janela
         self.bind("<Configure>", self._on_window_resize)
@@ -78,6 +80,22 @@ class ModernAppGUI(ctk.CTk):
         # Dispara layout inicial e aplica o tema salvo (renderiza a simulação com as cores do tema)
         self._apply_responsive_layout(1160)
         self._apply_theme(self.theme_mode)
+
+    def _on_close(self):
+        """Encerra completamente o Tk e os recursos gráficos da instância.
+
+        O handler explícito evita que canvases TkAgg sobrevivam ao fechamento da
+        janela, comportamento que podia manter processos PyInstaller residentes.
+        """
+        if self._is_closing:
+            return
+        self._is_closing = True
+        try:
+            self.financial_dashboard.fin_charts.dispose()
+            self.chart_controller.dispose()
+        finally:
+            self.quit()
+            self.destroy()
 
     def _build_navigation(self):
         """Navegação leve entre a projeção de CDB e o controle pessoal."""

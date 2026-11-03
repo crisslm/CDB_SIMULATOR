@@ -281,3 +281,15 @@ class InvestmentChart:
         self.ax_bar.set_title("Evolução do Capital até a Meta", color=pal["text"], fontsize=11, pad=10)
         self.fig_bar.tight_layout()
         self.canvas_bar.draw_idle()
+
+    def dispose(self):
+        """Libera canvases e figures ao encerrar a janela principal."""
+        for canvas in (self.canvas, self.canvas_bar):
+            if canvas is not None:
+                try:
+                    canvas.get_tk_widget().destroy()
+                except Exception:
+                    pass
+        for figure in (self.fig, self.fig_bar):
+            if figure is not None:
+                plt.close(figure)
