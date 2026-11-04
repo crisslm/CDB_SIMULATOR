@@ -62,7 +62,14 @@ class MetricCard(ctk.CTkFrame):
     """
     Card estilizado com fundo branco, cantos bem arredondados (corner_radius=16)
     e tipografia fiel à referência visual.
+    
+    Animações dinâmicas:
+    - Transição suave de cor de fundo e borda ao passar o mouse (hover)
+    - Efeito sutil de elevação na borda
     """
+
+    ANIMATION_STEPS = 8        # Número de passos na animação de cor
+    ANIMATION_DELAY = 15       # Milissegundos entre cada passo
 
     def __init__(
         self,
@@ -88,6 +95,14 @@ class MetricCard(ctk.CTkFrame):
             border_width=border_width,
             **kwargs
         )
+
+        # Armazena cores originais para animações de hover
+        self._original_fg = fg_color
+        self._original_border = border_color
+        self._hover_fg = _interpolate_color(fg_color, "#E0E0E0", 0.15) if not is_highlight else _interpolate_color(fg_color, "#D0E7D9", 0.15)
+        self._hover_border = _interpolate_color(border_color, "#8E8E93", 0.4)
+        self._is_hovered = False
+        self._animation_id = None
 
         # Cabeçalho do Card (Título + Badge Opcional)
         self.frame_header = ctk.CTkFrame(self, fg_color="transparent")
@@ -125,6 +140,64 @@ class MetricCard(ctk.CTkFrame):
         )
         self.lbl_valor.pack(anchor="w", padx=14, pady=(0, 12))
 
+        # Bind dos eventos de mouse para animações de hover
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        # Propaga eventos para os filhos também
+        self.frame_header.bind("<Enter>", self._on_enter)
+        self.frame_header.bind("<Leave>", self._on_leave)
+        self.lbl_titulo.bind("<Enter>", self._on_enter)
+        self.lbl_titulo.bind("<Leave>", self._on_leave)
+        self.lbl_valor.bind("<Enter>", self._on_enter)
+        self.lbl_valor.bind("<Leave>", self._on_leave)
+        if self.badge:
+            self.badge.bind("<Enter>", self._on_enter)
+            self.badge.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, event):
+        """Inicia animação de hover suave ao passar o mouse."""
+        self._is_hovered = True
+        self._cancel_animation()
+        self._animate_hover(0)
+
+    def _on_leave(self, event):
+        """Inicia animação de saída suave ao retirar o mouse."""
+        self._is_hovered = False
+        self._cancel_animation()
+        self._animate_hover(self.ANIMATION_STEPS)
+
+    def _cancel_animation(self):
+        """Cancela qualquer animação em andamento."""
+        if self._animation_id is not None:
+            try:
+                self.after_cancel(self._animation_id)
+            except Exception:
+                pass
+            self._animation_id = None
+
+    def _animate_hover(self, step: int):
+        """
+        Anima a transição de cor gradualmente entre o estado normal e hover.
+        step: passo atual (0 = totalmente hover, ANIMATION_STEPS = totalmente normal)
+        """
+        if self._is_hovered:
+            # Transição: normal -> hover
+            factor = step / self.ANIMATION_STEPS
+            current_fg = _interpolate_color(self._original_fg, self._hover_fg, factor)
+            current_border = _interpolate_color(self._original_border, self._hover_border, factor)
+        else:
+            # Transição: hover -> normal
+            factor = step / self.ANIMATION_STEPS
+            current_fg = _interpolate_color(self._hover_fg, self._original_fg, factor)
+            current_border = _interpolate_color(self._hover_border, self._original_border, factor)
+
+        self.configure(fg_color=current_fg, border_color=current_border)
+
+        if 0 <= step < self.ANIMATION_STEPS:
+            self._animation_id = self.after(self.ANIMATION_DELAY, lambda: self._animate_hover(step + 1))
+        else:
+            self._animation_id = None
+
     def update_value(self, novo_valor: str, badge_text: str = None):
         """Atualiza o valor principal e opcionalmente o texto da badge."""
         self.lbl_valor.configure(text=novo_valor)
@@ -133,9 +206,14 @@ class MetricCard(ctk.CTkFrame):
 
     def apply_theme(self, pal: dict):
         """Reaplica as cores do card de acordo com o tema (Claro/Escuro)."""
+        self._original_fg = pal["accent_bg"] if self._is_highlight else pal["surface"]
+        self._original_border = pal["accent"] if self._is_highlight else pal["border"]
+        self._hover_fg = _interpolate_color(self._original_fg, "#404040", 0.15)
+        self._hover_border = _interpolate_color(self._original_border, "#A0A0A0", 0.4)
+
         self.configure(
-            fg_color=pal["accent_bg"] if self._is_highlight else pal["surface"],
-            border_color=pal["accent"] if self._is_highlight else pal["border"],
+            fg_color=self._original_fg,
+            border_color=self._original_border,
         )
         self.lbl_titulo.configure(text_color=pal["text_muted"])
         self.lbl_valor.configure(text_color=pal["text"])
