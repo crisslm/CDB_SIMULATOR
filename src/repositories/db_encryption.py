@@ -1,10 +1,18 @@
 """
 Criptografia de arquivo para o banco de dados financeiro.
 
-Utiliza Fernet (AES-128 em modo CBC com HMAC-SHA256 para autenticação)
+Utiliza Fernet (AES-128 em modo CBC + HMAC-SHA256 para autenticação)
 da biblioteca ``cryptography``. O arquivo SQLite é mantido criptografado
 em disco (``financial.sqlite3.enc``) e somente descriptografado para um
 arquivo temporário enquanto a aplicação está em execução.
+
+A chave de criptografia pode ser fornecida via:
+
+1. Variável de ambiente ``CDB_DB_ENCRYPTION_KEY`` (chave Fernet em base64)
+2. Arquivo ``.env`` na raiz do projeto com ``CDB_DB_ENCRYPTION_KEY=...``
+
+Se nenhuma chave for fornecida, uma nova será gerada automaticamente e
+armazenada localmente (compatível com versões anteriores).
 """
 
 from __future__ import annotations
@@ -17,6 +25,23 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+try:
+    from dotenv import load_dotenv
+
+    _DOTENV_AVAILABLE = True
+except ImportError:  # pragma: no cover - python-dotenv é uma dependência opcional
+    _DOTENV_AVAILABLE = False
+
+ENV_VAR_NAME = "CDB_DB_ENCRYPTION_KEY"
+
+
+def _load_env() -> None:
+    """Carrega variáveis de ambiente do arquivo .env, se existir e python-dotenv estiver instalado."""
+    if _DOTENV_AVAILABLE:
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path)
+
 
 class DatabaseEncryption:
     """Gerencia a criptografia simétrica do arquivo SQLite."""
@@ -26,11 +51,31 @@ class DatabaseEncryption:
         self._fernet = self._load_or_create_key(password)
 
     def _load_or_create_key(self, password: str | None) -> Fernet:
-        """Carrega uma chave existente ou gera uma nova protegida por senha."""
+        """Carrega a chave de criptografia.
+
+        Ordem de prioridade:
+        1. Variável de ambiente CDB_DB_ENCRYPTION_KEY
+        2. Arquivo .db_key existente (comportamento legado)
+        3. Geração de nova chave (salva em .db_key)
+        """
+        _load_env()
+
+        # 1. Tentar chave via variável de ambiente
+        env_key = os.getenv(ENV_VAR_NAME)
+        if env_key:
+            try:
+                return Fernet(env_key.encode("utf-8"))
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"A variável de ambiente {ENV_VAR_NAME} não é uma chave Fernet válida."
+                ) from exc
+
+        # 2. Tentar carregar chave existente do disco (legado)
         if self.key_path.exists():
             raw_key = self.key_path.read_bytes()
             return Fernet(raw_key)
 
+        # 3. Gerar nova chave
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
 
         if password:
