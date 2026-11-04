@@ -17,7 +17,22 @@ from src.ui.gui.financial.financial_charts import FinancialCharts
 TYPE_LABELS = {"Receita": TransactionType.INCOME, "Despesa": TransactionType.EXPENSE, "Investimento": TransactionType.INVESTMENT}
 TYPE_BY_VALUE = {item.value: label for label, item in TYPE_LABELS.items()}
 PERIODS = ["Mês atual", "Mês anterior", "Últimos 3 meses", "Últimos 6 meses", "Últimos 12 meses", "Todo o período", "Período personalizado"]
-COLORS = ["#24C270", "#4F8CFF", "#FF9F43", "#FF6B6B", "#A970FF", "#32B8C6", "#F368E0", "#8395A7"]
+
+# Cores pré-definidas para categorias (nome amigável -> código hex)
+CATEGORY_COLORS = [
+    ("Verde", "#24C270"),
+    ("Azul", "#4F8CFF"),
+    ("Laranja", "#FF9F43"),
+    ("Vermelho", "#FF6B6B"),
+    ("Roxo", "#A970FF"),
+    ("Ciano", "#32B8C6"),
+    ("Rosa", "#F368E0"),
+    ("Cinza", "#8395A7"),
+    ("Amarelo", "#F9CA24"),
+    ("Azul Escuro", "#1C1C1E"),
+    ("Verde Escuro", "#107C41"),
+    ("Laranja Escuro", "#D9534F"),
+]
 
 
 class CategoryDialog(ctk.CTkToplevel):
@@ -42,15 +57,16 @@ class CategoryDialog(ctk.CTkToplevel):
         form.pack(fill="x", padx=18, pady=(0, 10))
         self.name_entry = self._input(form, "Nome da categoria")
         self.type_combo = ctk.CTkComboBox(form, values=list(TYPE_LABELS), height=36, corner_radius=10, command=lambda _: None)
-        self.color_entry = self._input(form, "#24C270"); self.color_entry.insert(0, "#24C270")
+        self.color_combo = ctk.CTkComboBox(form, values=[name for name, _ in CATEGORY_COLORS], height=36, corner_radius=10, command=lambda _: None)
+        self.color_combo.set(CATEGORY_COLORS[0][0])
         self.name_entry.grid(row=0, column=0, sticky="ew", padx=12, pady=12); self.type_combo.grid(row=0, column=1, padx=5, pady=12)
-        self.color_entry.grid(row=0, column=2, padx=5, pady=12); form.grid_columnconfigure(0, weight=1)
+        self.color_combo.grid(row=0, column=2, padx=5, pady=12); form.grid_columnconfigure(0, weight=1)
         self.type_combo.set("Despesa")
         self.save_button = PillButton(form, text="Adicionar", command=self._save, variant="primary", width=110)
         self.save_button.grid(row=0, column=3, padx=(5, 12), pady=12); self.save_button.apply_theme(self.palette)
         self.list_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.list_frame.pack(fill="both", expand=True, padx=18, pady=(0, 18))
-        self._style_combo(self.type_combo); self._render_list()
+        self._style_combo(self.type_combo); self._style_combo(self.color_combo); self._render_list()
 
     def _style_combo(self, combo):
         combo.configure(fg_color=self.palette["surface_input"], border_color=self.palette["border_input"], button_color=self.palette["surface_input"], button_hover_color=self.palette["border_input"], text_color=self.palette["text"], dropdown_fg_color=self.palette["surface"], dropdown_text_color=self.palette["text"])
@@ -68,16 +84,25 @@ class CategoryDialog(ctk.CTkToplevel):
 
     def _edit(self, category):
         self.edit_id = category.id; self.name_entry.delete(0, "end"); self.name_entry.insert(0, category.name)
-        self.type_combo.set(category.transaction_type.label); self.color_entry.delete(0, "end"); self.color_entry.insert(0, category.color)
+        self.type_combo.set(category.transaction_type.label)
+        # Seleciona a cor correspondente no combobox
+        for name, hex_color in CATEGORY_COLORS:
+            if hex_color == category.color:
+                self.color_combo.set(name)
+                break
         self.save_button.configure(text="Salvar")
 
     def _save(self):
         try:
+            # Mapeia o nome da cor selecionada de volta para o código hex
+            selected_color_name = self.color_combo.get()
+            selected_color_hex = next((hex_color for name, hex_color in CATEGORY_COLORS if name == selected_color_name), CATEGORY_COLORS[0][1])
+
             if self.edit_id:
-                self.service.update_category(self.edit_id, self.name_entry.get(), TYPE_LABELS[self.type_combo.get()], self.color_entry.get())
+                self.service.update_category(self.edit_id, self.name_entry.get(), TYPE_LABELS[self.type_combo.get()], selected_color_hex)
             else:
-                self.service.create_category(self.name_entry.get(), TYPE_LABELS[self.type_combo.get()], self.color_entry.get())
-            self.edit_id = None; self.name_entry.delete(0, "end"); self.color_entry.delete(0, "end"); self.color_entry.insert(0, "#24C270")
+                self.service.create_category(self.name_entry.get(), TYPE_LABELS[self.type_combo.get()], selected_color_hex)
+            self.edit_id = None; self.name_entry.delete(0, "end"); self.color_combo.set(CATEGORY_COLORS[0][0])
             self.save_button.configure(text="Adicionar"); self._render_list(); self.dashboard.refresh()
         except ValueError as exc: messagebox.showerror("Categoria", str(exc), parent=self)
 
