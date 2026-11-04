@@ -44,13 +44,5 @@ Name: "{commondesktop}\CDB Simulator"; Filename: "{app}\CDB_Simulator.exe"; Task
 [Run]
 Filename: "{app}\CDB_Simulator.exe"; Description: "{cm:LaunchProgram,CDB Simulator}"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-; NÃO apagar a pasta de dados do usuário (~/.cdb_simulator)
-; Os dados financeiros ficam em %USERPROFILE%\.cdb_simulator\ e devem ser preservados.
-
-[Code]
-; Impede a remoção da pasta de dados do usuário na desinstalação
-function UninstallNeeded: Boolean;
-begin
-  Result := True;
-end;
+; Nota: A pasta de dados do usuário (~/.cdb_simulator) NÃO é removida na desinstalação.
+; O Inno Setup não remove pastas fora de {app} a menos que listadas em [UninstallDelete].
