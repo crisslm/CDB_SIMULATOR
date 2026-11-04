@@ -1,5 +1,6 @@
-customtkinter>=6.0.0
-matplotlib>=3.8.0
-pytest>=8.0.0
-watchdog>=6.0.0
-pyinstaller>=6.0.0
+customtkinter==6.0.0
+matplotlib==3.8.0
+pytest==8.0.0
+watchdog==6.0.0
+pyinstaller==6.0.0
+cryptography==42.0.8

@@ -8,19 +8,19 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
-def calcular_aliquota_ir(meses: int) -> float:
+def calcular_aliquota_ir(dias: int) -> float:
     """
     Retorna a alíquota regressiva do Imposto de Renda para renda fixa (CDB):
-    - Até 180 dias (aprox. até 6 meses): 22.5%
-    - De 181 a 360 dias (aprox. de 7 a 12 meses): 20.0%
-    - De 361 a 720 dias (aprox. de 13 a 24 meses): 17.5%
-    - Acima de 720 dias (mais de 24 meses): 15.0%
+    - Até 180 dias: 22.5%
+    - De 181 a 360 dias: 20.0%
+    - De 361 a 720 dias: 17.5%
+    - Acima de 720 dias: 15.0%
     """
-    if meses <= 6:
+    if dias <= 180:
         return 0.225
-    elif meses <= 12:
+    elif dias <= 360:
         return 0.20
-    elif meses <= 24:
+    elif dias <= 720:
         return 0.175
     else:
         return 0.15
@@ -63,3 +63,4 @@ class SimulationResult:
     net_interest: float = 0.0
     net_balance: float = 0.0
     timeline: List[MonthlyRecord] = field(default_factory=list)
+    truncado: bool = False

@@ -637,8 +637,12 @@ class ModernAppGUI(ctk.CTk):
             meta_str = self.entry_meta.get().strip().replace(",", ".")
             meta_val = float(meta_str) if meta_str else 1_000_000.0
 
-            if inicial < 0 or mensal < 0 or taxa_raw < 0:
-                messagebox.showerror("Erro de Valor", "Os valores de aportes e taxa não podem ser negativos.")
+            if inicial < 0 or mensal < 0:
+                messagebox.showerror("Erro de Valor", "Os valores de aportes não podem ser negativos.")
+                return
+
+            if taxa_raw < 0 or taxa_raw > 100:
+                messagebox.showerror("Erro de Valor", "A taxa de rendimento deve estar entre 0% e 100%.")
                 return
 
             if periodo_raw <= 0:
@@ -651,6 +655,12 @@ class ModernAppGUI(ctk.CTk):
 
         except ValueError:
             messagebox.showerror("Erro de Formato", "Por favor, preencha todos os campos apenas com números válidos.")
+            return
+        except Exception as exc:
+            messagebox.showerror(
+                "Erro Inesperado",
+                f"Ocorreu um erro inesperado ao ler os dados: {exc}"
+            )
             return
 
         # Conversão de prazo em meses com proteção contra período fracionário menor que 1 mês
@@ -668,8 +678,14 @@ class ModernAppGUI(ctk.CTk):
         if "CDI" in self.combo_estrategia.get():
             try:
                 cdi_base = float(self.entry_cdi_base.get().strip().replace(",", "."))
+                if cdi_base <= 0 or cdi_base > 100:
+                    raise ValueError("A taxa CDI base deve estar entre 0 e 100.")
             except ValueError:
-                cdi_base = 10.75
+                messagebox.showerror(
+                    "Erro de Valor",
+                    "Digite um valor válido para a Taxa CDI Base (ex: 10.75)."
+                )
+                return
             strategy = CDIStrategy(cdi_percentage=taxa_raw, cdi_annual_rate=cdi_base, use_effective_rate=True)
         else:
             is_annual = self.combo_periodo_taxa.get() == "% ao ano"

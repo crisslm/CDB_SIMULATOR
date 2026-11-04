@@ -6,6 +6,7 @@ Princípios SOLID:
 """
 
 import math
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 from src.domain.models import (
     SimulationParams, 
@@ -18,63 +19,78 @@ from src.domain.strategies import YieldStrategy
 # Limite máximo de segurança para períodos (100 anos = 1200 meses)
 MAX_SIMULATION_MONTHS = 1200
 
+# Tolerância para comparação de taxa com zero (evita erro de ponto flutuante)
+ZERO_TOLERANCE = 1e-12
+
 
 class InvestmentSimulatorService:
     """
     Serviço responsável por coordenar a simulação do plano de investimento e projeções.
     """
 
+    def _D(self, valor) -> Decimal:
+        """Converte qualquer valor para Decimal com precisão de 2 casas decimais."""
+        return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
     def simulate(self, params: SimulationParams, strategy: YieldStrategy) -> SimulationResult:
         """
         Executa a evolução patrimonial mês a mês com base nos parâmetros e na estratégia de rendimento.
         Protegido com limite máximo de meses para evitar exaustão de memória (DoS).
+        Usa Decimal internamente para evitar erros de ponto flutuante em cálculos monetários.
         """
         if params.total_months < 0:
             raise ValueError("O período de meses não pode ser negativo.")
 
         total_months = min(params.total_months, MAX_SIMULATION_MONTHS)
-        monthly_rate = strategy.get_monthly_rate()
-        current_balance = params.initial_amount
-        total_invested = params.initial_amount
+        truncado = total_months < params.total_months
+        monthly_rate = self._D(strategy.get_monthly_rate())
+        current_balance = self._D(params.initial_amount)
+        total_invested = self._D(params.initial_amount)
         timeline = []
 
         for month in range(1, total_months + 1):
             # Aporte ocorre no início do ciclo de capitalização mensal
-            current_balance += params.monthly_contribution
-            total_invested += params.monthly_contribution
+            current_balance += self._D(params.monthly_contribution)
+            total_invested += self._D(params.monthly_contribution)
 
-            # Rendimento sobre o saldo total
-            interest_month = current_balance * monthly_rate
+            # Rendimento sobre o saldo total (arredondado a cada mês)
+            interest_month = (current_balance * monthly_rate).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
             current_balance += interest_month
 
             record = MonthlyRecord(
                 month=month,
-                invested_to_date=round(total_invested, 2),
-                interest_earned_month=round(interest_month, 2),
-                total_balance=round(current_balance, 2)
+                invested_to_date=float(total_invested),
+                interest_earned_month=float(interest_month),
+                total_balance=float(current_balance)
             )
             timeline.append(record)
 
-        total_interest = max(0.0, current_balance - total_invested)
+        total_interest = max(Decimal("0.0"), current_balance - total_invested)
         months_to_target = self.calculate_months_to_target(params, strategy)
 
         # Cálculo do Imposto de Renda regressivo (CDB / Renda Fixa)
-        ir_aliquota = calcular_aliquota_ir(total_months)
-        ir_total = total_interest * ir_aliquota
+        # Converte meses para dias aproximados (meses * 30)
+        ir_aliquota = calcular_aliquota_ir(total_months * 30)
+        ir_total = (total_interest * Decimal(str(ir_aliquota))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         net_interest = total_interest - ir_total
         net_balance = total_invested + net_interest
 
         return SimulationResult(
-            total_invested=round(total_invested, 2),
-            total_interest=round(total_interest, 2),
-            final_balance=round(current_balance, 2),
+            total_invested=float(total_invested),
+            total_interest=float(total_interest),
+            final_balance=float(current_balance),
             total_months=total_months,
             months_to_target=months_to_target,
-            ir_aliquota=ir_aliquota,
-            ir_total=round(ir_total, 2),
-            net_interest=round(net_interest, 2),
-            net_balance=round(net_balance, 2),
-            timeline=timeline
+            ir_aliquota=float(ir_aliquota),
+            ir_total=float(ir_total),
+            net_interest=float(net_interest),
+            net_balance=float(net_balance),
+            timeline=timeline,
+            truncado=truncado,
         )
 
     def calculate_months_to_target(
@@ -96,12 +112,12 @@ class InvestmentSimulatorService:
 
         monthly_rate = strategy.get_monthly_rate()
 
-        # Sem juros nem aportes
-        if monthly_rate == 0 and params.monthly_contribution <= 0:
+        # Sem juros nem aportes (usa tolerância para evitar erro de ponto flutuante)
+        if abs(monthly_rate) < ZERO_TOLERANCE and params.monthly_contribution <= 0:
             return None
 
         # Sem juros: acumulação puramente linear de aportes
-        if monthly_rate == 0:
+        if abs(monthly_rate) < ZERO_TOLERANCE:
             meses = math.ceil((params.target_amount - params.initial_amount) / params.monthly_contribution)
             return meses if meses <= max_months else None
 

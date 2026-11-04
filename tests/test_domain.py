@@ -29,11 +29,10 @@ def test_cdi_strategy_nominal_and_effective():
     assert strategy_eff.get_monthly_rate() == pytest.approx(expected_rate, rel=1e-6)
 
 def test_aliquota_ir_regressiva():
-    assert calcular_aliquota_ir(3) == 0.225   # <= 6 meses
-    assert calcular_aliquota_ir(6) == 0.225
-    assert calcular_aliquota_ir(10) == 0.20   # 7 a 12 meses
-    assert calcular_aliquota_ir(12) == 0.20
-    assert calcular_aliquota_ir(18) == 0.175  # 13 a 24 meses
-    assert calcular_aliquota_ir(24) == 0.175
-    assert calcular_aliquota_ir(25) == 0.15   # > 24 meses
-    assert calcular_aliquota_ir(60) == 0.15
+    assert calcular_aliquota_ir(180) == 0.225   # até 180 dias
+    assert calcular_aliquota_ir(181) == 0.20    # 181 a 360 dias
+    assert calcular_aliquota_ir(360) == 0.20
+    assert calcular_aliquota_ir(361) == 0.175   # 361 a 720 dias
+    assert calcular_aliquota_ir(720) == 0.175
+    assert calcular_aliquota_ir(721) == 0.15    # acima de 720 dias
+    assert calcular_aliquota_ir(1000) == 0.15

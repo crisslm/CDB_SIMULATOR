@@ -5,7 +5,7 @@
 [![Tests](https://img.shields.io/badge/tests-pytest-green.svg)](https://docs.pytest.org/)
 [![Architecture](https://img.shields.io/badge/architecture-Clean%20%2F%20Layered-orange.svg)]()
 
-> Aplicação desktop e de linha de comando para simulação de rendimentos de CDB e investimentos em juros compostos com aportes mensais recorrentes, projeção temporal analítica de metas patrimoniais, cálculo de Imposto de Renda regressivo, interface adaptativa **Mobile-Friendly / Desktop** e visualização gráfica de alta performance.
+> Aplicação desktop (GUI) para simulação de rendimentos de CDB e investimentos em juros compostos com aportes mensais recorrentes, projeção temporal analítica de metas patrimoniais, cálculo de Imposto de Renda regressivo, interface adaptativa **Mobile-Friendly / Desktop** e visualização gráfica de alta performance.
 
 ---
 
@@ -63,11 +63,9 @@ A aplicação conta com arquitetura responsiva que se molda dinamicamente ao tam
 - **Projeção Analítica de Metas Financeiras:** Algoritmo fechado em $O(1)$ baseado na fórmula logarítmica de anuidade com aportes antecipados, sem dependência de loops lentos.
 - **Gráfico de Área de Alta Performance:** Renderização via `matplotlib` reutilizando instâncias de `FigureCanvasTkAgg` com atualização suave (`draw_idle`), evitando recriação de widgets ou vazamentos de memória.
 - **Proteção Contra Sobrecarga (Anti-DoS):** Validação de valores nulos, negativos e teto máximo de prazo (100 anos / 1.200 meses) para proteger a aplicação contra travamento por consumo excessivo de memória.
-- **Duas Interfaces de Acesso:**
-  - **GUI Moderna:** Interface desktop com tema **Clean Light / Fintech** e suporte completo a **Modo Escuro** (Dark Mode), com alternância via botão no cabeçalho da barra lateral e persistência da preferência entre reinicializações (`~/.cdb_simulator_theme.json`). Toda a paleta (fundo, superfícies, inputs, cards, badges, botões, gráficos e legendas) se adapta dinamicamente ao tema escolhido.
-  - **CLI (Terminal):** Modo console direto com validação de limites e suporte completo a Prefixado e CDI.
-- **Controle Financeiro persistente:** Nova seção da GUI para registrar receitas, despesas e aportes, com categorias personalizáveis, filtros temporais, histórico editável e gráficos dinâmicos. Os dados ficam em SQLite local, fora do repositório.
-- **Automação Completa:** Scripts unificados (`.bat`, `.ps1`, `.sh`) com pipeline que só permite recompilar ou rodar o software se todos os testes unitários passarem.
+- **Interface Gráfica (GUI):** Interface desktop com tema **Clean Light / Fintech** e suporte completo a **Modo Escuro** (Dark Mode), com alternância via botão no cabeçalho da barra lateral e persistência da preferência entre reinicializações (`~/.cdb_simulator_theme.json`). Toda a paleta (fundo, superfícies, inputs, cards, badges, botões, gráficos e legendas) se adapta dinamicamente ao tema escolhido.
+- **Controle Financeiro persistente:** Nova seção da GUI para registrar receitas, despesas e aportes, com categorias personalizáveis, filtros temporais, histórico editável e gráficos dinâmicos. Os dados ficam em SQLite local, criptografados em repouso, fora do repositório.
+- **Automação Completa:** Scripts unificados (`.bat`, `.ps1`, `.sh`) com pipeline que só permite rodar o software se todos os testes unitários passarem.
 
 ---
 
@@ -76,10 +74,11 @@ A aplicação conta com arquitetura responsiva que se molda dinamicamente ao tam
 | Tecnologia | Versão Mínima | Função no Projeto | Justificativa Técnica |
 | :--- | :--- | :--- | :--- |
 | **Python** | 3.13+ | Linguagem Base | Tipagem estática (`typing`), dataclasses imutáveis e ecossistema maduro para finanças e GUI desktop. |
-| **CustomTkinter** | >= 6.0.0 | Toolkit de GUI Desktop | Extensão moderna sobre o Tkinter nativo. Fornece widgets modernos, cantos arredondados, paletas consistentes e suporte a High-DPI sem o overhead de Chromium/Electron. |
-| **Matplotlib** | >= 3.8.0 | Motor Gráfico | Renderizador visual integrado à janela via `FigureCanvasTkAgg`. Reutilização de canvas para máxima fluidez e limpeza visual sem molduras pesadas (*despined*). |
-| **Pytest** | >= 8.0.0 | Testes Unitários | Framework de testes rápido e conciso. Configurado via `pytest.ini` para execução direta. |
-| **PyInstaller** | >= 6.0.0 | Empacotamento | Gera executáveis nativos independentes (`.exe` no Windows) sem exigir Python instalado na máquina final. |
+| **CustomTkinter** | == 6.0.0 | Toolkit de GUI Desktop | Extensão moderna sobre o Tkinter nativo. Fornece widgets modernos, cantos arredondados, paletas consistentes e suporte a High-DPI sem o overhead de Chromium/Electron. |
+| **Matplotlib** | == 3.8.0 | Motor Gráfico | Renderizador visual integrado à janela via `FigureCanvasTkAgg`. Reutilização de canvas para máxima fluidez e limpeza visual sem molduras pesadas (*despined*). |
+| **Pytest** | == 8.0.0 | Testes Unitários | Framework de testes rápido e conciso. Configurado via `pytest.ini` para execução direta. |
+| **PyInstaller** | == 6.0.0 | Empacotamento | Gera executáveis nativos independentes (`.exe` no Windows) sem exigir Python instalado na máquina final. |
+| **cryptography** | == 42.0.8 | Criptografia | Criptografia de arquivo (Fernet/AES-128 + HMAC-SHA256) para o banco de dados do Controle Financeiro em repouso. |
 
 ---
 
@@ -122,33 +121,34 @@ CDB Simulator/
 │   │   ├── simulator_service.py          # Lógica de simulação, IR e metas analíticas
 │   │   └── financial_service.py          # Casos de uso, filtros e agregações financeiras
 │   ├── repositories/                     # Adaptadores de persistência
-│   │   └── financial_repository.py       # Banco SQLite versionado do Controle Financeiro
+│   │   ├── __init__.py
+│   │   ├── financial_repository.py       # Banco SQLite versionado do Controle Financeiro
+│   │   └── db_encryption.py              # Criptografia do banco SQLite (Fernet/AES-128)
 │   │
 │   └── ui/                               # Camada de apresentação
 │       ├── __init__.py
-│       ├── cli.py                        # Interface de linha de comando
 │       └── gui/                          # Interface gráfica desktop
 │           ├── __init__.py
 │           ├── app.py                    # Janela principal responsiva (Mobile/Desktop)
 │           ├── components.py             # Cards de métricas, botões Pill e formatadores
-│           └── chart.py                  # Canvas Matplotlib performático
+│           ├── chart.py                  # Canvas Matplotlib performático
+│           └── theme.py                  # Paletas de cores (Claro/Escuro) — módulo independente
 │
 ├── tests/                                # Testes automatizados (pytest)
 │   ├── test_domain.py                    # Testes de estratégias, CDI e IR regressivo
-│   ├── test_publish.py                   # Testes da publicação do .exe (substituição e hash)
+│   ├── test_financial.py                 # Testes do Controle Financeiro
+│   ├── test_security_and_validations.py  # Testes de segurança e validações de correções
 │   └── test_services.py                  # Testes do serviço, metas analíticas e limites
 │
 ├── .gitignore                            # Exclusão de caches, executáveis e arquivos temporários
 ├── pytest.ini                            # Configuração global de execução do pytest
 ├── main_gui.py                           # Ponto de entrada oficial para a Interface Gráfica
-├── main_cli.py                           # Ponto de entrada oficial para a Interface Terminal
-├── preview.py                            # Utilitário de Live-Reload para desenvolvimento
-├── publish.py                            # Copia o .exe compilado para a Área de Trabalho (substituição segura)
 ├── project.bat                           # Script utilitário para Windows CMD
 ├── project.ps1                           # Script utilitário para Windows PowerShell
 ├── project.sh                            # Script utilitário para Bash (Linux / Git Bash / WSL)
 ├── requirements.txt                      # Declaração formal de dependências do Python
-└── update.txt                            # Guia rápido de compilação
+├── update.txt                            # Guia rápido de compilação
+└── CDB_Simulator.spec                    # Spec do PyInstaller para build do executável
 ```
 
 ### 4.2 Princípios SOLID Aplicados
@@ -188,11 +188,11 @@ CDB Simulator/
   - Reorganização automática dos cards de métricas entre 2 e 5 colunas.
   - Alternância dinâmica de campos: ao selecionar CDB pós-fixado, abre o campo de **Taxa CDI Base (% a.a.)**.
   - **Botão de Alternância de Tema:** Permite alternar entre Modo Claro e Modo Escuro com persistência da preferência em arquivo JSON local (`~/.cdb_simulator_theme.json`). A reaplicação de cores é aplicada em toda a interface (fundo, superfícies, inputs, cards, badges, botões e gráficos Matplotlib).
-  - Validações completas para valores negativos, metas inválidas e prazos fracionários.
+  - Validações completas para valores negativos, metas inválidas, prazos fracionários, limite superior de taxa (0–100%) e tratamento genérico de exceções inesperadas.
 - **[chart.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/gui/chart.py):**
   - Controlador gráfico de alta eficiência que reutiliza a mesma `Figure` e `Canvas`, limpando apenas os eixos (`ax.clear()`) e desenhando de forma assíncrona (`draw_idle()`).
-- **[cli.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/cli.py):**
-  - Interface via terminal com suporte a CDI customizado, metas e apresentação detalhada de IR.
+- **[theme.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/gui/theme.py):**
+  - Módulo independente com `PALETTES` e `THEME_MODES` (Claro/Escuro), importado por `components.py` e `chart.py`, eliminando qualquer ciclo de importação.
 
 ---
 
@@ -210,12 +210,14 @@ $$\text{Saldo Final} = \text{Saldo Provisório} + \text{Rendimento do Mês}$$
 
 ### 6.2 Tabela Regressiva de Imposto de Renda (IR)
 
+A alíquota regressiva segue a tabela oficial brasileira baseada em **dias corridos**:
+
 | Prazo da Aplicação | Alíquota de IR |
 | :--- | :--- |
-| Até 6 meses (180 dias) | **22,5%** sobre o rendimento |
-| De 7 a 12 meses (181 a 360 dias) | **20,0%** sobre o rendimento |
-| De 13 a 24 meses (361 a 720 dias) | **17,5%** sobre o rendimento |
-| Acima de 24 meses (mais de 720 dias) | **15,0%** sobre o rendimento |
+| Até 180 dias | **22,5%** sobre o rendimento |
+| De 181 a 360 dias | **20,0%** sobre o rendimento |
+| De 361 a 720 dias | **17,5%** sobre o rendimento |
+| Acima de 720 dias | **15,0%** sobre o rendimento |
 
 $$\text{IR Retido} = \text{Total em Juros Brutos} \times \text{Alíquota}$$
 $$\text{Saldo Líquido} = \text{Total Investido} + (\text{Total em Juros Brutos} - \text{IR Retido})$$
@@ -306,24 +308,48 @@ pytest
 python main_gui.py
 ```
 
-### 9.2 Modo Terminal (CLI)
-```bash
-python main_cli.py
-```
-
-### 9.3 Scripts de Automação (`project`)
+### 9.2 Scripts de Automação (`project`)
 
 | Ação | Windows CMD | Windows PowerShell | Git Bash / Linux |
 | :--- | :--- | :--- | :--- |
-| **Live-Reload (Preview)** | `project preview` | `.\project.ps1 preview` | `./project.sh preview` |
 | **Rodar GUI (com validação prévia)** | `project run` | `.\project.ps1 run` | `./project.sh run` |
-| **Rodar CLI (com validação prévia)** | `project run cli` | `.\project.ps1 run cli` | `./project.sh run cli` |
 | **Executar Testes Unitários** | `project test` | `.\project.ps1 test` | `./project.sh test` |
-| **Testar, Compilar e Publicar o .exe** | `project update` | `.\project.ps1 update` | `./project.sh update` |
 
 ---
 
-## 10. Testes Automatizados e Qualidade
+## 10. Segurança e Criptografia em Repouso
+
+### 10.1 Banco de Dados do Controle Financeiro
+
+O banco de dados SQLite do **Controle Financeiro** (`~/.cdb_simulator/financial.sqlite3`) é armazenado **criptografado em repouso** utilizando **Fernet (AES-128 CBC + HMAC-SHA256)** da biblioteca [`cryptography`](https://cryptography.io/).
+
+- O arquivo real mantido em disco é `financial.sqlite3.enc` (criptografado).
+- Enquanto a aplicação está em execução, o banco é descriptografado para um **arquivo temporário** protegido.
+- Ao encerrar a aplicação, o banco é recriptografado de volta para o `.enc` e o temporário é removido.
+- Uma chave simétrica é gerada automaticamente na primeira execução e armazenada em `~/.cdb_simulator/.db_key` com permissões restritas (`0600` em sistemas Unix).
+
+> ⚠️ **Importante:** Faça backup do arquivo `.db_key` junto com o banco `.enc`. Sem a chave, não é possível recuperar os dados financeiros criptografados.
+
+### 10.2 Correções de Bugs e Vulnerabilidades
+
+A seguir, todas as correções aplicadas nas versões recentes:
+
+| # | Problema | Severidade | Correção |
+|---|----------|------------|----------|
+| 1 | **IR regressivo por meses** (deveria ser dias) | Alta | `calcular_aliquota_ir` agora recebe `dias` (faixas: ≤180, 181–360, 361–720, >720), alinhado com a documentação de negócio. |
+| 2 | **Uso de `float` em cálculos monetários** | Alta | O `InvestmentSimulatorService` agora usa `decimal.Decimal` internamente, arredondando a cada mês com `ROUND_HALF_UP`, eliminando erros de ponto flutuante. |
+| 3 | **Banco SQLite não criptografado** | Alta | Banco financeiro armazenado em `.enc` (criptografado) via Fernet/AES-128 + HMAC-SHA256; descriptografado temporariamente apenas durante a execução. |
+| 4 | **Validação silenciosa do CDI Base** | Média | A GUI agora exibe `messagebox.showerror` e impede o cálculo se o CDI base for inválido, em vez de usar silenciosamente o valor padrão 10.75. |
+| 5 | **Sem limite superior para taxa/CDI** | Média | Validação de taxa máxima (0–100% para juros, 0–500% para CDI, 0–100% para CDI base) na GUI e CLI. |
+| 6 | **Importação circular frágil** | Baixa | Criado `src/ui/gui/theme.py` com `PALETTES` e `THEME_MODES`, importado por `components.py` e `chart.py`, eliminando o ciclo. |
+| 7 | **Truncamento silencioso do período** | Baixa | Novo campo `truncado` em `SimulationResult`, preenchido quando o período excede 1200 meses. |
+| 8 | **Comparação exata de float com zero** | Baixa | Substituída por tolerância `abs(valor) < 1e-12` (`ZERO_TOLERANCE`). |
+| 9 | **Código morto na raiz** | Baixa | Arquivos antigos `simulador.py` e `app_gui.py` (versões não utilizadas) removidos. O único ponto de entrada é `main_gui.py` → `src/ui/gui/app.py`. |
+| 10 | **Dependências não fixadas** | Baixa | `requirements.txt` agora usa versões fixas (`==`) para reprodutibilidade de builds. |
+| 11 | **Sem tratamento genérico de exceções na GUI** | Baixa | `on_simulate_click` agora captura `Exception` genérico com `messagebox.showerror` amigável. |
+| 12 | **Sem auditoria de alterações financeiras** | Baixa | Nova tabela `audit_log` registra INSERT, UPDATE e DELETE de transações com timestamps. |
+
+### 10.3 Testes Automatizados e Qualidade
 
 O projeto conta com uma suíte de testes unitários que valida 100% das regras críticas de negócio antes de qualquer execução ou empacotamento:
 
@@ -336,17 +362,25 @@ pytest
   - Taxa direta ao mês.
   - Taxa anual nominal vs. taxa equivalente composta.
   - Estratégia de CDI com taxas base customizadas.
-  - Tabela regressiva completa de Imposto de Renda (todas as 4 faixas).
+  - Tabela regressiva completa de Imposto de Renda (todas as 4 faixas, baseada em dias).
+- **Segurança e Validações (`test_security_and_validations.py`):**
+  - IR regressivo por dias (não mais por meses).
+  - Precisão Decimal no simulador (sem erro de ponto flutuante).
+  - Criptografia do banco SQLite em repouso.
+  - Validação de limites de taxa e CDI.
+  - Módulo theme independente (sem importação circular).
+  - Truncamento do período (campo `truncado`).
+  - Tolerância de zero (`ZERO_TOLERANCE = 1e-12`).
+  - Dependências fixadas no `requirements.txt`.
+  - Auditoria de transações (INSERT/UPDATE/DELETE).
 - **Serviço e Simulações (`test_services.py`):**
   - Simulação precisa com aporte e rentabilidade mês a mês.
   - Apuração exata de IR retido e saldo líquido.
   - Cálculo analítico de tempo até a meta ($O(1)$).
   - Tratamento de metas já atingidas ou inalcançáveis.
   - Proteção contra limites abusivos de prazo (limite de 100 anos anti-DoS).
-- **Publicação do Executável (`test_publish.py`):**
-  - Substituição do `.exe` na Área de Trabalho pela versão nova.
-  - Bloqueio quando o executável está em execução.
-  - Detecção de versão já publicada (no-op) e modo `--dry-run`.
+- **Controle Financeiro (`test_financial.py`):**
+  - Cálculos, persistência, filtros, agregações, edição, exclusão e receita zero.
 
 ---
 
@@ -359,29 +393,8 @@ A compilação do executável é gerenciada pelo comando `project update`:
    ```text
    dist/CDB_Simulator.exe
    ```
-4. Por fim, o `publish.py` copia o novo executável para a **Área de Trabalho**,
-   substituindo a versão anterior (sem manter backup) e conferindo o SHA-256
-   dos dois arquivos.
 
-### 11.1 Por que existe o `publish.py`?
-
-A Área de Trabalho deste projeto está dentro do OneDrive. Arquivos `.exe`
-sincronizados (*Files On-Demand*) são **reparse points**, e o Windows Explorer
-costuma falhar ao substituir/excluir esses arquivos com erros de sincronização
-("não foi possível excluir o arquivo", "arquivo em uso", `0x800701AA`, etc.).
-
-O `publish.py` faz a troca na ordem que funciona de forma confiável, sem passar
-pela camada de sincronização do Explorer: copia o novo `.exe` preservando a data
-da compilação (removendo o antigo apenas se a sobrescrita direta falhar) e
-valida o hash. Ele também **aborta** se o simulador estiver aberto (arquivo travado).
-
-Comandos úteis:
-
-```bash
-python publish.py              # publica dist/CDB_Simulator.exe na Área de Trabalho
-python publish.py --dry-run    # apenas mostra o que seria feito
-python publish.py --dest PATH  # publica em outra pasta
-```
+O executável pode ser distribuído independentemente, não exigindo Python instalado na máquina final.
 
 ---
 
@@ -416,7 +429,11 @@ O banco é criado em `~/.cdb_simulator/financial.sqlite3`, portanto não é incl
 - **Tema Claro / Escuro:**
   - Implementado botão de alternância de tema na barra lateral da GUI com persistência da preferência entre sessões.
   - Criação de paletas de cores dedicadas para Modo Claro e Modo Escuro, aplicadas dinamicamente a inputs, cards, badges, botões e gráficos Matplotlib.
-  - Quebra de ciclo de importação entre pacotes `ui` e `ui.gui` via importação preguiçosa (PEP 562), permitindo inicialização estável do executável `.exe`.
+  - Módulo `src/ui/gui/theme.py` com `PALETTES` e `THEME_MODES`, importado por `components.py` e `chart.py`, eliminando qualquer ciclo de importação.
+
+- **Criptografia do Banco Financeiro:**
+  - O banco SQLite do Controle Financeiro passou a ser armazenado **criptografado em repouso** (`.enc`) via Fernet/AES-128 + HMAC-SHA256, protegendo receitas, despesas e investimentos contra leitura não autorizada no dispositivo.
+  - Chave simétrica gerada automaticamente e armazenada com permissões restritas (`.db_key`).
 
 ---
 # CDB_SIMULATOR

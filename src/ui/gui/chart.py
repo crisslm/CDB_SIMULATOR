@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
 from src.domain.models import MonthlyRecord
+from src.ui.gui.theme import PALETTES  # importado de módulo independente para evitar ciclo
 
 
 class InvestmentChart:
@@ -25,7 +26,6 @@ class InvestmentChart:
     """
 
     def __init__(self, master_widget, bar_widget=None):
-        from src.ui.gui.components import PALETTES  # importado aqui para evitar ciclo de importacao
 
         self.master = master_widget
         self.bar_master = bar_widget

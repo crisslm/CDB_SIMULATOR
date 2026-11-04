@@ -8,69 +8,7 @@ Inspirado na referência visual moderna (Fintech / Clean Warm Light):
 
 import customtkinter as ctk
 
-# ---------------------------------------------------------------------------
-# Paletas de cores - Modo Claro e Modo Escuro
-# ---------------------------------------------------------------------------
-PALETTES = {
-    "Light": {
-        "bg_root": "#F9F9FB",
-        "surface": "#FFFFFF",
-        "surface_input": "#F2F2F7",
-        "border": "#EBEBEB",
-        "border_input": "#E5E5EA",
-        "text": "#1C1C1E",
-        "text_muted": "#8E8E93",
-        "accent": "#24C270",
-        "accent_bg": "#EBF7EE",
-        "accent_text": "#107C41",
-        "button_fg": "#1C1C1E",
-        "button_hover": "#3A3A3C",
-        "button_text": "#FFFFFF",
-        "button_outline_fg": "#FFFFFF",
-        "button_outline_hover": "#F2F2F7",
-        "button_outline_text": "#1C1C1E",
-        "button_outline_border": "#D1D1D6",
-        "chart_bg": "#FFFFFF",
-        "chart_spine": "#E5E5EA",
-        "chart_grid": "#8E8E93",
-        "chart_tick": "#8E8E93",
-        "chart_legend_bg": "#F7F7F8",
-        "chart_legend_edge": "#E5E5EA",
-        "chart_legend_text": "#3A3A3C",
-        "invested_line": "#A0A0A5",
-        "meta_line": "#FF6B6B",
-    },
-    "Dark": {
-        "bg_root": "#121214",
-        "surface": "#1C1C1E",
-        "surface_input": "#2A2A2E",
-        "border": "#333336",
-        "border_input": "#3A3A3C",
-        "text": "#F2F2F7",
-        "text_muted": "#AEAEB3",
-        "accent": "#24C270",
-        "accent_bg": "#103B24",
-        "accent_text": "#6FE29F",
-        "button_fg": "#F2F2F7",
-        "button_hover": "#FFFFFF",
-        "button_text": "#1C1C1E",
-        "button_outline_fg": "#2A2A2E",
-        "button_outline_hover": "#3A3A3C",
-        "button_outline_text": "#F2F2F7",
-        "button_outline_border": "#4A4A4E",
-        "chart_bg": "#1C1C1E",
-        "chart_spine": "#3A3A3C",
-        "chart_grid": "#3A3A3C",
-        "chart_tick": "#AEAEB3",
-        "chart_legend_bg": "#2A2A2E",
-        "chart_legend_edge": "#3A3A3C",
-        "chart_legend_text": "#D1D1D6",
-        "invested_line": "#8E8E93",
-        "meta_line": "#FF6B6B",
-    },
-}
-
-THEME_MODES = ("Light", "Dark")
+from src.ui.gui.theme import PALETTES, THEME_MODES
 
 
 def formatar_moeda(valor: float) -> str:

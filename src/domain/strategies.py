@@ -8,6 +8,9 @@ Princípios SOLID:
 
 from abc import ABC, abstractmethod
 
+# Tolerância para comparação de taxa com zero (evita erro de ponto flutuante)
+ZERO_TOLERANCE = 1e-12
+
 
 class YieldStrategy(ABC):
     """
