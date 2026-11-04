@@ -63,6 +63,7 @@ exe = EXE(
     a.datas,
     [],
     name='CDB_Simulator',
+    icon='CDB_Simulator.ico',  # Ícone personalizado do executável
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
