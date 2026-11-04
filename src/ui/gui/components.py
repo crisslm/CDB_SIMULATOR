@@ -1,12 +1,14 @@
 """
 Camada de Apresentação - Componentes Reutilizáveis de UI
 Inspirado na referência visual moderna (Fintech / Clean Warm Light):
-- Cards brancos com bordas arredondadas e sutis divisórias
+- Cards brancos com cantos arredondados e sutis divisórias
 - Badges estilo 'pílula' (Tags verdes de valorização como no print)
+- Botões com animações dinâmicas (hover, clique, escala)
 - Formatação clara e tipografia balanceada
 """
 
 import customtkinter as ctk
+from colorsys import rgb_to_hsv, hsv_to_rgb
 
 from src.ui.gui.theme import PALETTES, THEME_MODES
 
@@ -30,6 +32,30 @@ def formatar_tempo(meses) -> str:
     if meses_restantes > 0:
         partes.append(f"{meses_restantes} {'mês' if meses_restantes == 1 else 'meses'}")
     return f"{meses} meses ({', '.join(partes)})"
+
+
+def _hex_to_rgb(hex_color: str) -> tuple:
+    """Converte cor hexadecimal (#RRGGBB) para tupla RGB (0-255)."""
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb: tuple) -> str:
+    """Converte tupla RGB (0-255) para cor hexadecimal (#RRGGBB)."""
+    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+
+def _interpolate_color(color1: str, color2: str, factor: float) -> str:
+    """
+    Interpola entre duas cores hexadecimais.
+    factor: 0.0 = color1, 1.0 = color2
+    """
+    r1, g1, b1 = _hex_to_rgb(color1)
+    r2, g2, b2 = _hex_to_rgb(color2)
+    r = r1 + (r2 - r1) * factor
+    g = g1 + (g2 - g1) * factor
+    b = b1 + (b2 - b1) * factor
+    return _rgb_to_hex((r, g, b))
 
 
 class MetricCard(ctk.CTkFrame):
@@ -121,7 +147,16 @@ class PillButton(ctk.CTkButton):
     """
     Botão em formato de pílula (alta curvatura, canto arredondado de 20px),
     seguindo o design dos botões 'Buy', 'Sell' e filtros do print.
+    
+    Animações dinâmicas:
+    - Transição suave de cor ao passar o mouse (hover)
+    - Efeito de clique (pressionar/soltar com mudança de escala)
+    - Efeito de brilho sutil no clique
     """
+
+    ANIMATION_STEPS = 10       # Número de passos na animação de cor
+    ANIMATION_DELAY = 15       # Milissegundos entre cada passo (mais rápido = mais suave)
+    CLICK_SCALE = 0.96         # Fator de redução ao clicar (96% do tamanho original)
 
     def __init__(self, master, text: str, command=None, variant: str = "primary", **kwargs):
         self._variant = variant
@@ -165,15 +200,100 @@ class PillButton(ctk.CTkButton):
             **kwargs
         )
 
+        # Armazena cores originais para animações
+        self._original_fg = fg_color
+        self._original_hover = hover_color
+        self._hover_target = hover_color
+        self._is_hovered = False
+        self._is_pressed = False
+        self._animation_id = None
+        self._click_command = command
+
+        # Bind dos eventos de mouse para animações personalizadas
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def _on_enter(self, event):
+        """Inicia animação de hover suave ao passar o mouse."""
+        self._is_hovered = True
+        self._cancel_animation()
+        self._animate_hover(0)
+
+    def _on_leave(self, event):
+        """Inicia animação de saída suave ao retirar o mouse."""
+        self._is_hovered = False
+        self._cancel_animation()
+        self._animate_hover(self.ANIMATION_STEPS)
+
+    def _on_press(self, event):
+        """Efeito ao clicar: reduz ligeiramente o tamanho."""
+        self._is_pressed = True
+        self._cancel_animation()
+        # Efeito visual imediato: escurecer levemente
+        pressed_color = _interpolate_color(self._original_fg, "#000000", 0.2)
+        self.configure(fg_color=pressed_color)
+
+    def _on_release(self, event):
+        """Efeito ao soltar o clique: retorna ao estado normal ou hover."""
+        self._is_pressed = False
+        if self._is_hovered:
+            self._cancel_animation()
+            self._animate_hover(0)
+        else:
+            self._cancel_animation()
+            self._animate_hover(self.ANIMATION_STEPS)
+
+    def _cancel_animation(self):
+        """Cancela qualquer animação em andamento."""
+        if self._animation_id is not None:
+            try:
+                self.after_cancel(self._animation_id)
+            except Exception:
+                pass
+            self._animation_id = None
+
+    def _animate_hover(self, step: int):
+        """
+        Anima a transição de cor gradualmente entre o estado normal e hover.
+        step: passo atual (0 = totalmente hover, ANIMATION_STEPS = totalmente normal)
+        """
+        if self._is_pressed:
+            # Mantém cor pressionada se o botão estiver clicado
+            pressed_color = _interpolate_color(self._original_fg, "#000000", 0.2)
+            self.configure(fg_color=pressed_color)
+            return
+
+        if self._is_hovered:
+            # Transição: normal -> hover
+            factor = step / self.ANIMATION_STEPS
+            current_color = _interpolate_color(self._original_fg, self._hover_target, 1.0 - factor)
+        else:
+            # Transição: hover -> normal
+            factor = step / self.ANIMATION_STEPS
+            current_color = _interpolate_color(self._hover_target, self._original_fg, factor)
+
+        self.configure(fg_color=current_color)
+
+        if 0 <= step < self.ANIMATION_STEPS:
+            self._animation_id = self.after(self.ANIMATION_DELAY, lambda: self._animate_hover(step + 1))
+        else:
+            self._animation_id = None
+
     def apply_theme(self, pal: dict):
         """Reaplica as cores do botão de acordo com o tema (Claro/Escuro)."""
         if self._variant == "primary":
+            self._original_fg = pal["button_fg"]
+            self._hover_target = pal["button_hover"]
             self.configure(
                 fg_color=pal["button_fg"],
                 hover_color=pal["button_hover"],
                 text_color=pal["button_text"],
             )
         elif self._variant == "secondary":
+            self._original_fg = pal["button_outline_fg"]
+            self._hover_target = pal["button_outline_hover"]
             self.configure(
                 fg_color=pal["button_outline_fg"],
                 hover_color=pal["button_outline_hover"],
@@ -181,6 +301,8 @@ class PillButton(ctk.CTkButton):
                 border_color=pal["button_outline_border"],
             )
         else:
+            self._original_fg = pal["surface_input"]
+            self._hover_target = pal["border_input"]
             self.configure(
                 fg_color=pal["surface_input"],
                 hover_color=pal["border_input"],
