@@ -39,7 +39,7 @@ Source: "dist\CDB_Simulator.exe"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\CDB Simulator"; Filename: "{app}\CDB_Simulator.exe"
 Name: "{group}\Desinstalar CDB Simulator"; Filename: "{uninstallexe}"
-Name: "{desktop}\CDB Simulator"; Filename: "{app}\CDB_Simulator.exe"; Tasks: desktopicon
+Name: "{commondesktop}\CDB Simulator"; Filename: "{app}\CDB_Simulator.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\CDB_Simulator.exe"; Description: "{cm:LaunchProgram,CDB Simulator}"; Flags: nowait postinstall skipifsilent
