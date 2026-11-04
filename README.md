@@ -315,6 +315,40 @@ python main_gui.py
 | **Rodar GUI (com validação prévia)** | `project run` | `.\project.ps1 run` | `./project.sh run` |
 | **Executar Testes Unitários** | `project test` | `.\project.ps1 test` | `./project.sh test` |
 
+### 9.3 Gerar o Executável (.EXE) para Desktop
+
+O CDB Simulator pode ser empacotado em um único arquivo `.exe` que roda em qualquer Windows sem precisar de Python instalado.
+
+```bash
+# Windows CMD
+project update
+
+# Windows PowerShell
+.\project.ps1 update
+
+# Git Bash / Linux / WSL
+./project.sh update
+```
+
+O que o comando `update` faz:
+1. Executa a suíte de testes com `pytest`. Se algum falhar, o build é **bloqueado**.
+2. Gera o executável com PyInstaller usando o arquivo `CDB_Simulator.spec`.
+3. O resultado fica em: `dist/CDB_Simulator.exe`
+
+#### Onde os dados ficam salvos?
+
+O banco de dados financeiro (criptografado) é salvo em:
+```
+%USERPROFILE%\.cdb_simulator\
+```
+Exemplo: `C:\Users\SeuNome\.cdb_simulator\financial.sqlite3.enc`
+
+> ⚠️ **Importante:** Atualizar o `.exe` **não apaga** seus dados. O banco fica fora da pasta do programa. Porém, se você formatar o PC ou excluir essa pasta, os dados serão perdidos. Use o botão **Backup** na tela do Controle Financeiro para salvar uma cópia segura (`.enc` + `.db_key`) em outro local (OneDrive, pendrive, etc.).
+
+#### Instalador opcional
+
+Se preferir um instalador com atalho no Iniciar e desinstalador, você pode empacotar o `dist/CDB_Simulator.exe` com o [Inno Setup](https://jrsoftware.org/isinfo.php) (gratuito) ou [NSIS](https://nsis.sourceforge.io/). O instalador **não deve remover** a pasta `~/.cdb_simulator/` durante a desinstalação.
+
 ---
 
 ## 10. Segurança e Criptografia em Repouso

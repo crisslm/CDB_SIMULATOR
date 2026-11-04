@@ -1,18 +1,23 @@
-#### 1. Rodar a aplicação (testa e abre a interface gráfica):
+#### 1. Rodar a aplicação (interface gráfica):
 
     ./project.sh run
 
-  │ Se quiser rodar o modo terminal (CLI):
+  │ Se quiser rodar apenas os testes:
   │
-  │   ./project.sh run cli
+  │   ./project.sh test
   ──────
-  #### 2. Atualizar e recompilar o executável:
 
-    MSYS_NO_PATHCONV=1 taskkill /IM CDB_Simulator.exe /F
+#### 2. Atualizar e recompilar o executável (.EXE):
+
     ./project.sh update
 
-  (Executa a suíte de testes, recompila o executável e já publica a nova versão na Área de Trabalho)
+  (Executa a suíte de testes e, se todos passarem, recompila o executável em dist/CDB_Simulator.exe)
   ──────
-  #### 3. Rodar apenas os testes:
+
+#### 3. Rodar apenas os testes:
 
     ./project.sh test
+  ──────
+
+> Nota: O projeto agora é exclusivamente para desktop (.exe). Não há mais suporte a CLI/terminal nem scripts de preview/publish.
+> Os dados financeiros ficam criptografados em ~/.cdb_simulator/ e não são apagados ao atualizar o .exe.

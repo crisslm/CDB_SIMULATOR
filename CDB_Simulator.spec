@@ -1,12 +1,46 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# Especificação de build do CDB Simulator (Desktop .exe)
+# Gera um executável único (--onefile) sem janela de console (--noconsole/console=False).
+
+import sys
 
 a = Analysis(
     ['main_gui.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        # CustomTkinter e Tkinter
+        "customtkinter",
+        "tkinter",
+        "tkinter.font",
+        "tkinter.ttk",
+        # Matplotlib (gráficos)
+        "matplotlib",
+        "matplotlib.backends.backend_tkagg",
+        "matplotlib.pyplot",
+        "matplotlib.ticker",
+        "matplotlib.font_manager",
+        "matplotlib.colors",
+        "numpy",  # dependência do matplotlib
+        # Criptografia do banco financeiro
+        "cryptography",
+        "cryptography.fernet",
+        # Variáveis de ambiente (.env)
+        "dotenv",
+        # Módulos próprios do projeto
+        "src.domain.models",
+        "src.domain.strategies",
+        "src.services.simulator_service",
+        "src.services.financial_service",
+        "src.repositories.financial_repository",
+        "src.repositories.db_encryption",
+        "src.ui.gui.theme",
+        "src.ui.gui.components",
+        "src.ui.gui.chart",
+        "src.ui.gui.app",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -14,6 +48,7 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -29,7 +64,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=False,  # Sem janela de terminal ao abrir o app
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

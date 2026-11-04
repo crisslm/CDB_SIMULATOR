@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import date
-from tkinter import messagebox
+from pathlib import Path
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -113,6 +114,16 @@ class FinancialDashboard(ctk.CTkFrame):
     def _build(self):
         top = ctk.CTkFrame(self, fg_color="transparent"); top.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(top, text="Controle Financeiro", font=("Segoe UI", 21, "bold"), text_color=self.palette["text"]).pack(side="left")
+
+        botoes = ctk.CTkFrame(top, fg_color="transparent")
+        botoes.pack(side="right")
+
+        self.backup_button = PillButton(botoes, text="Backup", command=self._backup_database, variant="secondary", width=100)
+        self.backup_button.pack(side="left", padx=(0, 6)); self.backup_button.apply_theme(self.palette)
+
+        self.restore_button = PillButton(botoes, text="Restaurar", command=self._restore_database, variant="secondary", width=110)
+        self.restore_button.pack(side="left", padx=(0, 6)); self.restore_button.apply_theme(self.palette)
+
         self.manage_button = PillButton(top, text="Gerenciar categorias", command=lambda: CategoryDialog(self), variant="secondary", width=185)
         self.manage_button.pack(side="right"); self.manage_button.apply_theme(self.palette)
         ctk.CTkLabel(self, text="Acompanhe receitas, despesas e aportes em um só lugar.", font=("Segoe UI", 12), text_color=self.palette["text_muted"]).pack(anchor="w", pady=(0, 12))
@@ -152,6 +163,61 @@ class FinancialDashboard(ctk.CTkFrame):
         ctk.CTkLabel(self.history_card, text="Histórico de movimentações", font=("Segoe UI", 15, "bold"), text_color=self.palette["text"]).pack(anchor="w", padx=14, pady=(12, 6))
         self.history = ctk.CTkScrollableFrame(self.history_card, fg_color="transparent", height=240); self.history.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.apply_layout(1200)
+
+    def _backup_database(self):
+        """Copia os arquivos criptografados (.enc + .db_key) para uma pasta escolhida pelo usuário."""
+        from tkinter import filedialog
+        from pathlib import Path
+        import shutil
+
+        db_dir = Path.home() / ".cdb_simulator"
+        enc_file = db_dir / "financial.sqlite3.enc"
+        key_file = db_dir / ".db_key"
+
+        if not enc_file.exists():
+            messagebox.showwarning("Backup", "Nenhum banco de dados criptografado encontrado para fazer backup.", parent=self.winfo_toplevel())
+            return
+
+        destino = filedialog.askdirectory(title="Escolha a pasta para salvar o backup", parent=self.winfo_toplevel())
+        if not destino:
+            return
+
+        try:
+            destino_path = Path(destino)
+            shutil.copy2(enc_file, destino_path / "financial.sqlite3.enc")
+            if key_file.exists():
+                shutil.copy2(key_file, destino_path / ".db_key")
+            messagebox.showinfo("Backup", "Backup concluído com sucesso!\n\nArquivos salvos:\n- financial.sqlite3.enc\n- .db_key\n\nGuarde o arquivo .db_key em local seguro: sem ele, não é possível restaurar os dados.", parent=self.winfo_toplevel())
+        except Exception as exc:
+            messagebox.showerror("Erro no Backup", f"Não foi possível fazer o backup: {exc}", parent=self.winfo_toplevel())
+
+    def _restore_database(self):
+        """Restaura os arquivos criptografados (.enc + .db_key) de uma pasta escolhida pelo usuário."""
+        from tkinter import filedialog
+        from pathlib import Path
+        import shutil
+
+        db_dir = Path.home() / ".cdb_simulator"
+        db_dir.mkdir(parents=True, exist_ok=True)
+
+        origem = filedialog.askdirectory(title="Escolha a pasta contendo o backup", parent=self.winfo_toplevel())
+        if not origem:
+            return
+
+        enc_file = Path(origem) / "financial.sqlite3.enc"
+        key_file = Path(origem) / ".db_key"
+
+        if not enc_file.exists():
+            messagebox.showerror("Erro na Restauração", "Arquivo financial.sqlite3.enc não encontrado na pasta selecionada.", parent=self.winfo_toplevel())
+            return
+
+        try:
+            shutil.copy2(enc_file, db_dir / "financial.sqlite3.enc")
+            if key_file.exists():
+                shutil.copy2(key_file, db_dir / ".db_key")
+            messagebox.showinfo("Restauração", "Banco de dados restaurado com sucesso!\n\nReinicie a aplicação para aplicar as alterações.", parent=self.winfo_toplevel())
+        except Exception as exc:
+            messagebox.showerror("Erro na Restauração", f"Não foi possível restaurar o backup: {exc}", parent=self.winfo_toplevel())
 
     def _on_period_change(self, value):
         if value == "Período personalizado":
