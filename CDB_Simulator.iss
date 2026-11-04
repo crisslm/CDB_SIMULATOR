@@ -22,9 +22,6 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 
-; Ícone do aplicativo (coloque o arquivo CDB_Simulator.ico na raiz do projeto)
-IconFilename=CDB_Simulator.ico
-
 [Languages]
 Name: "portugues"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
@@ -34,8 +31,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; O executável gerado pelo PyInstaller
 Source: "dist\CDB_Simulator.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Ícone do aplicativo
-Source: "CDB_Simulator.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\CDB Simulator"; Filename: "{app}\CDB_Simulator.exe"
