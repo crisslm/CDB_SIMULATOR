@@ -12,6 +12,10 @@
     ./project.sh update
 
   (Executa a suíte de testes e, se todos passarem, recompila o executável em dist/CDB_Simulator.exe)
+
+  > Nota sobre o NumPy: o build agora inclui hiddenimports para `numpy._core._*` e um
+  > runtime hook (`src/runtime_hooks/fix_numpy_path.py`) para evitar o erro
+  > `ModuleNotFoundError: No module named 'numpy._core._exceptions'` no .exe.
   ──────
 
 #### 3. Rodar apenas os testes:
@@ -19,5 +23,5 @@
     ./project.sh test
   ──────
 
-> Nota: O projeto agora é exclusivamente para desktop (.exe). Não há mais suporte a CLI/terminal nem scripts de preview/publish.
+> Nota: O projeto é exclusivamente para desktop (.exe). Não há suporte a CLI/terminal.
 > Os dados financeiros ficam criptografados em ~/.cdb_simulator/ e não são apagados ao atualizar o .exe.

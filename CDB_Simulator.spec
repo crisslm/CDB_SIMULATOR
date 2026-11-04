@@ -24,6 +24,11 @@ a = Analysis(
         "matplotlib.font_manager",
         "matplotlib.colors",
         "numpy",  # dependência do matplotlib
+        # NumPy 2.x + PyInstaller: módulos internos necessários pelo matplotlib
+        "numpy._core._exceptions",
+        "numpy._core.multiarray",
+        "numpy._core.umath",
+        "numpy._core._multiarray_umath",
         # Criptografia do banco financeiro
         "cryptography",
         "cryptography.fernet",
@@ -43,7 +48,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['src/runtime_hooks/fix_numpy_path.py'],
     excludes=[],
     noarchive=False,
     optimize=0,
