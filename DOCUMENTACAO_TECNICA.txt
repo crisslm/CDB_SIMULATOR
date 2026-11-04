@@ -1,0 +1,400 @@
+================================================================================
+                          DOCUMENTO TECNICO
+                     CDB Simulator - Aplicacao Desktop
+================================================================================
+
+Versao: 1.0.0
+Data: Novembro de 2026
+Linguagem: Python 3.13+
+Interface: CustomTkinter
+Banco de dados: SQLite criptografado (Fernet/AES-128)
+Empacotamento: PyInstaller (.exe onefile)
+
+================================================================================
+1. VISAO GERAL DO SISTEMA
+================================================================================
+
+O CDB Simulator e uma aplicacao desktop para simulacao de rendimentos de
+investimentos em renda fixa (CDB, juros compostos) e controle financeiro
+pessoal. O projeto foi desenvolvido em Python com interface grafica usando
+CustomTkinter, seguindo uma arquitetura em camadas (Clean Architecture) para
+separar logica de negocio da interface.
+
+Funcionalidades Principais:
+- Simulacao de juros compostos com aportes mensais recorrentes
+- Calculo de Imposto de Renda regressivo (tabela brasileira de renda fixa)
+- Suporte a taxas prefixadas e pos-fixadas (% do CDI)
+- Controle Financeiro pessoal (receitas, despesas, investimentos)
+- Banco de dados SQLite criptografado em repouso
+- Interface grafica responsiva com tema claro/escuro
+- Animacoes dinamicas em botoes e cards
+- Backup e restauracao de dados financeiros
+- Empacotamento como executavel unico (.exe) via PyInstaller
+
+================================================================================
+2. ARQUITETURA DO SISTEMA
+================================================================================
+
+O projeto adota uma Clean Architecture com separacao em camadas:
+
+  Camada de Apresentacao (UI)
+  main_gui.py -> src/ui/gui/
+        ↓ (usa)
+  Camada de Servicos
+  src/services/
+        ↓ (injeta / consome)
+  Camada de Dominio
+  src/domain/
+        ↓ (persiste)
+  Camada de Repositorios
+  src/repositories/
+
+Princípios SOLID Aplicados:
+| Princípio | Aplicação no Projeto |
+|-----------|---------------------|
+| SRP | Cada modulo tem responsabilidade unica (models para dados, strategies para taxas, chart para graficos, etc.) |
+| OCP | YieldStrategy e abstrata; novas estrategias de investimento podem ser criadas sem modificar codigo existente |
+| LSP | CompoundInterestStrategy e CDIStrategy sao intercambiaveis |
+| ISP | Contrato YieldStrategy e enxuto (get_monthly_rate(), get_description()) |
+| DIP | Servicos dependem de abstracao (YieldStrategy), nao de classes concretas |
+
+================================================================================
+3. CAMADAS DO SISTEMA
+================================================================================
+
+3.1 Camada de Dominio (src/domain/)
+Contem as regras de negocio puras, sem dependencias de UI ou infraestrutura.
+
+models.py:
+- calcular_aliquota_ir(dias): Retorna aliquota regressiva de IR baseada em dias corridos
+  (<=180: 22.5%, 181-360: 20%, 361-720: 17.5%, >720: 15%)
+- SimulationParams: Dataclass imutavel com parametros de entrada (valor inicial, aporte mensal, meses, meta)
+- SimulationResult: DTO com resultado completo (investido, juros, saldo final, IR, liquido, timeline, campo truncado)
+- MonthlyRecord: Registro mensal com investido, juros do mes e saldo total
+
+strategies.py:
+- YieldStrategy: Classe abstrata com contrato get_monthly_rate() e get_description()
+- CompoundInterestStrategy: Taxa fixa prefixada (ao mes ou ano, nominal ou equivalente composta)
+- CDIStrategy: CDB pos-fixado baseado em percentual do CDI com taxa base anual configuravel
+
+financial_models.py:
+- TransactionType: Enum (INCOME, EXPENSE, INVESTMENT)
+- FinancialCategory: Categoria com validacao de nome (max 120 chars), cor hex (#RRGGBB), tipo e status ativo/inativo
+- FinancialTransaction: Transacao com validacao de valor (>0 centavos), categoria, data e notas (max 1000 chars)
+- FinancialSummary: Resumo com totais por tipo e calculo de taxa de investimento
+
+3.2 Camada de Servicos (src/services/)
+
+simulator_service.py:
+- InvestmentSimulatorService.simulate(): Executa evolucao patrimonial mes a mes usando Decimal para precisao monetaria
+- InvestmentSimulatorService.calculate_months_to_target(): Calcula tempo para atingir meta usando formula analitica O(1) com fallback iterativo
+- MAX_SIMULATION_MONTHS = 1200: Limite de seguranca anti-DoS (100 anos)
+- ZERO_TOLERANCE = 1e-12: Tolerancia para comparacao de taxa com zero
+
+financial_service.py:
+- FinancialService: Gerencia categorias, transacoes, resumos, filtros por periodo e agregacoes
+- parse_amount_to_cents(): Converte valores monetarios brasileiros (R$ 1.250,50) para centavos inteiros
+- parse_br_date(): Converte datas no formato DD/MM/AAAA ou ISO
+- ensure_default_categories(): Insere categorias padrao se o banco estiver vazio
+
+3.3 Camada de Repositorios (src/repositories/)
+
+financial_repository.py:
+- FinancialRepository: Gerencia persistencia SQLite com criptografia opcional
+- Tabelas: categories, transactions, audit_log, schema_metadata
+- Criptografia: Banco armazenado como .enc (criptografado), descriptografado para arquivo temporario durante execucao, recriptografado ao encerrar
+- Auditoria: Registra INSERT, UPDATE e DELETE de transacoes com timestamps
+- CategoryInUseError: Impede exclusao de categoria com lancamentos associados
+
+db_encryption.py:
+- DatabaseEncryption: Gerencia criptografia Fernet (AES-128 CBC + HMAC-SHA256)
+- Chave pode vir de variavel de ambiente CDB_DB_ENCRYPTION_KEY ou arquivo .db_key
+- Prioridade: variavel de ambiente > arquivo existente > gerar nova
+
+3.4 Camada de Apresentacao (src/ui/)
+
+gui/app.py:
+- ModernAppGUI: Janela principal responsiva (CustomTkinter)
+- Breakpoint em 860px para layout mobile/desktop
+- Persistencia de tema claro/escuro em ~/.cdb_simulator_theme.json
+- Validacao de entradas com mensagens de erro amigaveis
+- Tratamento generico de excecoes
+
+gui/components.py:
+- MetricCard: Cards de metrica com animacao de hover (cor de fundo e borda)
+- PillButton: Botoes pilula com animacoes de hover e clique
+- formatar_moeda() / formatar_tempo(): Formatadores de moeda brasileira e tempo
+
+gui/theme.py:
+- PALETTES: Cores para temas Light e Dark
+- THEME_MODES: ("Light", "Dark")
+- Modulo independente para evitar ciclos de importacao
+
+gui/chart.py:
+- InvestmentChart: Graficos Matplotlib reutilizaveis (timeline e barras)
+- Reutiliza Figure/Canvas para evitar vazamento de memoria
+- dispose(): Limpa recursos ao encerrar
+
+gui/financial/dashboard.py:
+- FinancialDashboard: Tela completa do Controle Financeiro
+- CategoryDialog: Gerenciamento de categorias com selecao de cor pre-definida
+- FinancialCharts: Graficos de donut e barras para alocacao de despesas
+- Backup e restauracao de banco criptografado
+
+================================================================================
+4. DECISOES TECNICAS
+================================================================================
+
+4.1 Por que Decimal para calculos monetarios?
+O simulador usa decimal.Decimal internamente para evitar erros de ponto flutuante
+(float). Isso garante precisao exata em centavos, essencial para aplicacoes financeiras.
+
+4.2 Por que IR por dias e nao por meses?
+A tabela regressiva de IR do CDB no Brasil e baseada em dias corridos (ate 180, 181-360, etc.).
+O codigo foi corrigido para usar dias (meses * 30 a partir de meses) para ficar alinhado
+com a documentacao de negocio.
+
+4.3 Por que banco criptografado?
+O banco financeiro contem dados sensiveis (receitas, despesas, investimentos).
+A criptografia Fernet protege os dados em repouso no disco.
+
+4.4 Por que arquitetura em camadas?
+Permite testar logica de negocio independentemente da UI, facilita manutencao e
+permite trocar a interface (ex: web, mobile) sem alterar regras de negocio.
+
+4.5 Por que PyInstaller onefile?
+Gera um unico .exe facil de distribuir, sem exigir Python instalado no computador
+do usuario final.
+
+================================================================================
+5. COMO CADA COMPONENTE FUNCIONA
+================================================================================
+
+5.1 Simulacao de Juros Compostos
+
+Para cada mes:
+  1. Adiciona aporte mensal ao saldo
+  2. Calcula rendimento = saldo x taxa_mensal
+  3. Adiciona rendimento ao saldo
+  4. Registra no timeline
+
+Taxa mensal:
+  - Se anual: (1 + i_ano)^(1/12) - 1 (equivalente composta)
+  - Se mensal: i_mes / 100
+
+Imposto de Renda:
+  - Baseado em dias (meses * 30)
+  - Aplicado sobre juros brutos no final
+
+5.2 Calculo de Meta (O(1))
+
+Usa formula analitica de annuidade com aportes antecipados:
+
+n = ceil( ln((FV + k) / (PV + k)) / ln(1 + r) )
+
+Onde k = (PMT * (1 + r)) / r
+
+Tem fallback iterativo se a formula analitica falhar.
+
+5.3 Criptografia do Banco
+
+Execucao:
+  1. Ler chave (variavel de ambiente ou .db_key)
+  2. Descriptografar financial.sqlite3.enc -> arquivo temporario
+  3. Operar normalmente no banco temporario
+  4. Ao encerrar: recriptografar temporario -> .enc
+  5. Deletar arquivo temporario
+
+5.4 Animacoes da Interface
+
+- Botoes: Transicao de cor via interpolacao RGB (10 passos, 15ms cada), efeito de clique com escurecimento
+- Cards: Transicao de cor de fundo e borda no hover (8 passos, 15ms cada)
+- Eventos: <Enter>, <Leave>, <ButtonPress-1>, <ButtonRelease-1>
+
+================================================================================
+6. SEGURANCA
+================================================================================
+
+| Medida | Implementacao |
+|--------|---------------|
+| Criptografia em repouso | Fernet/AES-128 + HMAC-SHA256 |
+| Chave de criptografia | Variavel de ambiente CDB_DB_ENCRYPTION_KEY ou arquivo .db_key |
+| Chave protegida | Permissoes 0600 (Unix) |
+| Banco temporario | Arquivo temporario excluido ao encerrar |
+| Auditoria | Tabela audit_log registra INSERT/UPDATE/DELETE |
+| Validacao de entrada | Todos os campos validados antes de processar |
+| Limite de periodo | Maximo 1200 meses (anti-DoS) |
+| Limite de taxa | 0-100% para juros, 0-500% para CDI |
+
+================================================================================
+7. BUILD E DISTRIBUICAO
+================================================================================
+
+7.1 Gerar o executavel
+
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Gerar .exe
+project update        # Windows CMD
+.\project.ps1 update  # PowerShell
+./project.sh update   # Git Bash
+```
+
+O resultado fica em dist/CDB_Simulator.exe.
+
+7.2 Criar instalador Windows (Inno Setup)
+
+1. Baixar e instalar Inno Setup (https://jrsoftware.org/)
+2. Abrir CDB_Simulator.iss no Inno Setup Compiler
+3. Clicar em Build -> Compile
+4. Resultado: installer/CDB_Simulator_Setup_1.0.0.exe
+
+O instalador cria:
+- Atalho na Area de Trabalho e Menu Iniciar
+- Entrada no Painel de Controle (desinstalar)
+- Nao remove dados do usuario na desinstalacao
+
+7.3 Fluxo de Atualizacao
+
+```
+1. Alterar codigo-fonte
+2. Rodar: project update (testes + build)
+3. Compilar CDB_Simulator.iss no Inno Setup
+4. Executar o novo instalador
+   -> Dados em ~/.cdb_simulator/ sao preservados
+```
+
+================================================================================
+8. COMO EXECUTAR E TESTAR
+================================================================================
+
+Modo Desenvolvimento:
+```bash
+python main_gui.py
+```
+
+Executar Testes:
+```bash
+pytest
+```
+
+Executar com Validacao Previa:
+```bash
+project run    # Roda testes primeiro, depois abre a GUI
+```
+
+================================================================================
+9. ESTRUTURA DE DIRETORIOS
+================================================================================
+
+CDB Simulator/
+├── main_gui.py              # Ponto de entrada (desenvolvimento)
+├── CDB_Simulator.spec       # Configuracao PyInstaller
+├── CDB_Simulator.iss        # Script Inno Setup
+├── project.bat              # Script Windows CMD
+├── project.ps1              # Script PowerShell
+├── project.sh               # Script Bash
+├── update.txt               # Guia rapido
+├── requirements.txt         # Dependencias fixadas (==)
+├── .env.example             # Template de variaveis de ambiente
+├── .gitignore               # Protege .env, .db_key, dist/, build/
+├── README.md                # Documentacao usuario
+├── dist/                    # .exe gerado (nao versionado)
+│   └── CDB_Simulator.exe
+├── installer/               # Instalador gerado (nao versionado)
+│   └── CDB_Simulator_Setup_1.0.0.exe
+├── src/
+│   ├── __init__.py
+│   ├── domain/
+│   │   ├── __init__.py
+│   │   ├── models.py        # Dataclasses, calculo IR
+│   │   ├── strategies.py    # Estrategias de rendimento
+│   │   └── financial_models.py  # Entidades financeiras
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── simulator_service.py  # Motor de simulacao
+│   │   └── financial_service.py  # Controle financeiro
+│   ├── repositories/
+│   │   ├── __init__.py
+│   │   ├── financial_repository.py  # SQLite criptografado
+│   │   └── db_encryption.py   # Criptografia Fernet
+│   └── ui/
+│       ├── __init__.py
+│       ├── gui/
+│       │   ├── __init__.py
+│       │   ├── app.py         # Janela principal
+│       │   ├── theme.py       # Paletas de cores
+│       │   ├── components.py  # Cards e botoes com animacoes
+│       │   ├── chart.py       # Graficos Matplotlib
+│       │   └── financial/
+│       │       ├── __init__.py
+│       │       ├── dashboard.py  # Controle Financeiro
+│       │       └── financial_charts.py  # Graficos financeiros
+└── tests/
+    ├── test_domain.py
+    ├── test_financial.py
+    ├── test_services.py
+    └── test_security_and_validations.py
+
+================================================================================
+10. VARIAVEIS DE AMBIENTE
+================================================================================
+
+| Variavel | Descricao | Exemplo |
+|----------|-----------|---------|
+| CDB_DB_ENCRYPTION_KEY | Chave Fernet para criptografia do banco | base64-encoded-key |
+
+Crie um arquivo .env na raiz copiando .env.example e preencha com sua chave.
+
+================================================================================
+11. FLUXO DE DADOS (Simulacao)
+================================================================================
+
+Usuario insere parametros na GUI
+        ↓
+Validacao de entradas (valores, taxas, prazos)
+        ↓
+Criacao de SimulationParams + YieldStrategy
+        ↓
+InvestmentSimulatorService.simulate()
+        ↓
+Loop mes a mes com Decimal (precisao monetaria)
+        ↓
+Calculo de IR regressivo (dias * 30)
+        ↓
+SimulationResult com bruto, liquido, timeline
+        ↓
+Atualizacao da GUI (cards, graficos)
+
+================================================================================
+12. CONSIDERACOES DE MANUTENCAO
+================================================================================
+
+Para adicionar nova estrategia de investimento:
+1. Criar classe herdando YieldStrategy
+2. Implementar get_monthly_rate() e get_description()
+3. Registrar na GUI se necessario
+
+Para adicionar nova animacao:
+1. Seguir padrao de _on_enter, _on_leave, _animate_*
+2. Usar self.after() para frames
+3. Usar self.after_cancel() para cancelar animacoes anteriores
+
+Para alterar regras de IR:
+1. Modificar calcular_aliquota_ir() em src/domain/models.py
+2. Atualizar testes em tests/test_domain.py
+3. Atualizar documentacao se necessario
+
+================================================================================
+13. VERSAO E CHANGELOG
+================================================================================
+
+| Versao | Data | Mudancas Principais |
+|--------|------|---------------------|
+| 1.0.0 | 2026 | Lancamento inicial desktop com criptografia, animacoes, backup/restore |
+
+================================================================================
+                            FIM DO DOCUMENTO
+================================================================================
