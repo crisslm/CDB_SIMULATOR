@@ -314,8 +314,15 @@ class PillButton(ctk.CTkButton):
         self.configure(fg_color=pressed_color)
 
     def _on_release(self, event):
-        """Efeito ao soltar o clique: retorna ao estado normal ou hover."""
+        """Efeito ao soltar o clique: retorna ao estado normal ou hover e executa o comando."""
         self._is_pressed = False
+        # Executa o comando original do botão se existir
+        if self._click_command is not None:
+            try:
+                self._click_command()
+            except Exception as exc:
+                import tkinter.messagebox as msg
+                msg.showerror("Erro", f"Erro ao executar ação do botão: {exc}", parent=self)
         if self._is_hovered:
             self._cancel_animation()
             self._animate_hover(0)
