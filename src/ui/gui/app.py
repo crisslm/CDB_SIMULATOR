@@ -359,14 +359,14 @@ class ModernAppGUI(ctk.CTk):
         self.combo_idioma.pack(side="right", padx=(4, 0))
 
         # 1. Tipo de Rendimento / Estratégia
-        lbl_estrategia = ctk.CTkLabel(
+        self.lbl_estrategia = ctk.CTkLabel(
             self.frame_sidebar,
             text=t("sidebar.strategy.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
         )
-        lbl_estrategia.pack(fill="x", padx=16, pady=(4, 4))
+        self.lbl_estrategia.pack(fill="x", padx=16, pady=(4, 4))
 
         self.combo_estrategia = ctk.CTkComboBox(
             self.frame_sidebar,
@@ -386,14 +386,14 @@ class ModernAppGUI(ctk.CTk):
         self.combo_estrategia.pack(fill="x", padx=16, pady=(0, 12))
 
         # 2. Valor Inicial
-        lbl_inicial = ctk.CTkLabel(
+        self.lbl_inicial = ctk.CTkLabel(
             self.frame_sidebar,
             text=t("sidebar.initial.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
         )
-        lbl_inicial.pack(fill="x", padx=16, pady=(2, 4))
+        self.lbl_inicial.pack(fill="x", padx=16, pady=(2, 4))
 
         self.entry_inicial = ctk.CTkEntry(
             self.frame_sidebar,
@@ -407,14 +407,14 @@ class ModernAppGUI(ctk.CTk):
         self.entry_inicial.pack(fill="x", padx=16, pady=(0, 12))
 
         # 3. Aporte Mensal
-        lbl_mensal = ctk.CTkLabel(
+        self.lbl_mensal = ctk.CTkLabel(
             self.frame_sidebar,
             text=t("sidebar.monthly.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
         )
-        lbl_mensal.pack(fill="x", padx=16, pady=(2, 4))
+        self.lbl_mensal.pack(fill="x", padx=16, pady=(2, 4))
 
         self.entry_mensal = ctk.CTkEntry(
             self.frame_sidebar,
@@ -490,14 +490,14 @@ class ModernAppGUI(ctk.CTk):
         self.entry_cdi_base.pack(fill="x", pady=(0, 10))
 
         # 5. Tempo / Período
-        lbl_periodo = ctk.CTkLabel(
+        self.lbl_periodo = ctk.CTkLabel(
             self.frame_sidebar,
             text=t("sidebar.period.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
         )
-        lbl_periodo.pack(fill="x", padx=16, pady=(2, 4))
+        self.lbl_periodo.pack(fill="x", padx=16, pady=(2, 4))
 
         frame_periodo = ctk.CTkFrame(self.frame_sidebar, fg_color="transparent")
         frame_periodo.pack(fill="x", padx=16, pady=(0, 12))
@@ -531,14 +531,14 @@ class ModernAppGUI(ctk.CTk):
         self.combo_tipo_periodo.pack(side="right")
 
         # 6. Meta Desejada
-        lbl_meta = ctk.CTkLabel(
+        self.lbl_meta = ctk.CTkLabel(
             self.frame_sidebar,
             text=t("sidebar.target.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
         )
-        lbl_meta.pack(fill="x", padx=16, pady=(2, 4))
+        self.lbl_meta.pack(fill="x", padx=16, pady=(2, 4))
 
         self.entry_meta = ctk.CTkEntry(
             self.frame_sidebar,
@@ -577,12 +577,12 @@ class ModernAppGUI(ctk.CTk):
             self.combo_idioma,
         ]
         self._labels_muted = [
-            lbl_estrategia,
-            lbl_inicial,
-            lbl_mensal,
+            self.lbl_estrategia,
+            self.lbl_inicial,
+            self.lbl_mensal,
             self.lbl_taxa,
-            lbl_periodo,
-            lbl_meta,
+            self.lbl_periodo,
+            self.lbl_meta,
             self.lbl_cdi_base,
         ]
 
