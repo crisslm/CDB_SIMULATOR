@@ -1,4 +1,23 @@
-"""Repositório SQLite do Controle Financeiro com criptografia opcional em repouso."""
+"""
+Repositório SQLite do Controle Financeiro com Criptografia Opcional
+===================================================================
+
+Este módulo implementa o padrão Repository para persistência de dados do
+Controle Financeiro (categorias, transações, auditoria) em SQLite.
+
+Funcionalidades principais:
+    1. CRUD completo de categorias e transações.
+    2. Criptografia opcional do banco em repouso (via DatabaseEncryption).
+    3. Tabela de auditoria (audit_log) registrando INSERT/UPDATE/DELETE.
+    4. Consultas agregadas diretas em SQL (SUM, GROUP BY) para eficiência.
+    5. Conexão SQLite persistente (reutilizada entre chamadas).
+
+Camada: Repositório (infraestrutura de persistência)
+Depende de: src.domain.financial_models, src.repositories.db_encryption
+
+Autor: CDB Simulator
+Versão: 1.0.0
+"""
 
 from __future__ import annotations
 
@@ -15,10 +34,48 @@ from src.repositories.db_encryption import DatabaseEncryption
 
 
 class CategoryInUseError(ValueError):
-    """A categoria não pode ser removida pois possui lançamentos."""
+    """
+    Exceção lançada quando se tenta excluir uma categoria que possui lançamentos.
+
+    Em vez de excluir, o usuário deve arquivar a categoria (archive_category)
+    para preservar o histórico financeiro.
+    """
+
+    pass
 
 
 class FinancialRepository:
+    """
+    Repositório SQLite para o Controle Financeiro.
+
+    Gerencia a persistência de categorias, transações e log de auditoria em
+    um banco SQLite local. Suporta criptografia opcional em repouso.
+
+    Fluxo de criptografia (quando habilitado):
+        1. Banco .enc (criptografado) é descriptografado para um temp file.
+        2. Todas as operações usam o temp file.
+        3. Ao fechar (close()), o temp é recriptografado de volta para .enc
+           e o temp é excluído.
+
+    Atributos:
+        SCHEMA_VERSION (int): Versão do esquema do banco (para migrações futuras).
+        database_path (Path): Caminho do arquivo SQLite.
+        encrypt (bool): Se True, usa criptografia em repouso.
+        _temp_path (Path | None): Caminho do arquivo temporário descriptografado.
+        _encryption (DatabaseEncryption | None): Instância de criptografia.
+        _connection (sqlite3.Connection | None): Conexão SQLite persistente.
+
+    Exemplo de uso:
+        repo = FinancialRepository(database_path="banco.sqlite3", encrypt=False)
+        cat = repo.add_category(FinancialCategory("Salário", TransactionType.INCOME, "#24C270"))
+        tx = repo.add_transaction(FinancialTransaction(...))
+
+    Observação de manutenção:
+        - A conexão SQLite é persistente (self._connection). Não feche manualmente
+          a menos que chame close().
+        - Ao adicionar novas tabelas, atualize SCHEMA_VERSION e _initialize().
+    """
+
     SCHEMA_VERSION = 1
 
     def __init__(
@@ -28,12 +85,30 @@ class FinancialRepository:
         encrypt: bool | None = None,
         password: str | None = None,
     ):
+        """
+        Inicializa o repositório e cria as tabelas se não existirem.
+
+        Parâmetros:
+            database_path (str | Path | None): Caminho do banco SQLite.
+                                               Se None, usa ~/.cdb_simulator/financial.sqlite3.
+            encrypt (bool | None): Se True, criptografa o banco. Se None,
+                                   criptografa apenas no caminho padrão do usuário.
+            password (str | None): Senha para criptografia (se encrypt=True).
+
+        Fluxo de inicialização:
+            1. Define o caminho do banco (padrão ou customizado).
+            2. Determina se criptografia está ativa.
+            3. Se criptografado, descriptografa o banco para um temp file.
+            4. Registra close() no atexit para recriptografar ao encerrar.
+            5. Cria diretórios e chama _initialize().
+            6. Limpa arquivos temporários órfãos de execuções anteriores.
+        """
         if database_path is None:
             database_path = Path.home() / ".cdb_simulator" / "financial.sqlite3"
         self.database_path = Path(database_path)
 
         # Habilita criptografia apenas no caminho padrão do usuário,
-        # salvo sobrescrita explícita via parâmetro ``encrypt``.
+        # salvo sobrescrita explícita via parâmetro encrypt.
         if encrypt is None:
             encrypt = database_path == Path.home() / ".cdb_simulator" / "financial.sqlite3"
         self.encrypt = encrypt
@@ -53,12 +128,23 @@ class FinancialRepository:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
+        # Limpa arquivos temporários órfãos deixados por execuções anteriores
+        # que não conseguiram encerrar corretamente (ex: travamento, kill).
         for tmp in self.database_path.parent.glob("tmp*.sqlite3"):
             try: tmp.unlink()
             except OSError: pass
 
     def _decrypt_to_temp(self) -> Path:
-        """Descriptografa o banco .enc (se existir) para um arquivo temporário."""
+        """
+        Descriptografa o banco .enc para um arquivo temporário.
+
+        Se o arquivo criptografado existir, ele é descriptografado para o temp.
+        Se não existir (primeira execução), o temp começa vazio e é inicializado
+        por _initialize().
+
+        Retorna:
+            Path: Caminho do arquivo temporário descriptografado.
+        """
         fd, temp_name = tempfile.mkstemp(suffix=".sqlite3", dir=str(self.database_path.parent))
         os.close(fd)
         temp_path = Path(temp_name)
@@ -72,7 +158,19 @@ class FinancialRepository:
         return temp_path
 
     def _connect(self) -> sqlite3.Connection:
-        """Retorna uma conexão persistente, criando apenas na primeira vez."""
+        """
+        Retorna uma conexão SQLite persistente, criando apenas na primeira vez.
+
+        A conexão é reutilizada em todas as operações subsequentes, evitando
+        o overhead de abrir/fechar o banco a cada chamada.
+
+        Configurações aplicadas:
+            - row_factory = sqlite3.Row (acesso por nome de coluna).
+            - PRAGMA foreign_keys = ON (integridade referencial).
+
+        Retorna:
+            sqlite3.Connection: Conexão ativa com o banco.
+        """
         if self._connection is None:
             path = self._temp_path if self._temp_path is not None else self.database_path
             self._connection = sqlite3.connect(path)
@@ -81,7 +179,22 @@ class FinancialRepository:
         return self._connection
 
     def close(self) -> None:
-        """Recriptografa o banco temporário de volta para o .enc e limpa resíduos."""
+        """
+        Fecha a conexão, recriptografa o banco temporário e limpa resíduos.
+
+        Este método é chamado automaticamente via atexit ao encerrar o processo.
+        Também pode ser chamado manualmente.
+
+        Fluxo:
+            1. Fecha a conexão SQLite persistente.
+            2. Recriptografa o temp file de volta para o .enc.
+            3. Exclui o temp file.
+
+        Observação de segurança:
+            Se o processo for encerrado abruptamente (SIGKILL, falta de energia),
+            o atexit NÃO será executado e o temp file pode permanecer descriptografado.
+            Isso é um risco conhecido mitigado pela limpeza de órfãos no __init__.
+        """
         if self._connection is not None:
             try:
                 self._connection.close()
@@ -101,6 +214,20 @@ class FinancialRepository:
                 self._temp_path = None
 
     def _initialize(self) -> None:
+        """
+        Cria as tabelas do banco se não existirem e insere categorias padrão.
+
+        Tabelas criadas:
+            - schema_metadata: Armazena a versão do esquema.
+            - categories: Categorias financeiras.
+            - transactions: Lançamentos financeiros.
+            - audit_log: Log de alterações (auditoria).
+
+        Índices criados para melhorar performance de consultas por data e categoria.
+
+        Após criar as tabelas, insere categorias padrão apenas se o banco estiver
+        vazio (primeira execução).
+        """
         with self._connect() as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS schema_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             conn.execute("""
@@ -164,10 +291,30 @@ class FinancialRepository:
 
     @staticmethod
     def _category(row: sqlite3.Row) -> FinancialCategory:
+        """
+        Converte uma linha do banco (sqlite3.Row) em um objeto FinancialCategory.
+
+        Parâmetros:
+            row (sqlite3.Row): Linha do resultado de SELECT nas categorias.
+
+        Retorna:
+            FinancialCategory: Objeto de domínio preenchido.
+        """
         return FinancialCategory(row["name"], TransactionType(row["transaction_type"]), row["color"], row["id"], bool(row["active"]))
 
     @staticmethod
     def _transaction(row: sqlite3.Row) -> FinancialTransaction:
+        """
+        Converte uma linha do banco (sqlite3.Row) em um objeto FinancialTransaction.
+
+        O JOIN com categorias traz category_name e category_color para exibição na UI.
+
+        Parâmetros:
+            row (sqlite3.Row): Linha do resultado de SELECT nas transações.
+
+        Retorna:
+            FinancialTransaction: Objeto de domínio preenchido.
+        """
         return FinancialTransaction(
             TransactionType(row["transaction_type"]), row["description"], row["amount_cents"],
             row["category_id"], date.fromisoformat(row["occurred_on"]), row["notes"], row["id"],
@@ -183,13 +330,36 @@ class FinancialRepository:
         old_data: str | None = None,
         new_data: str | None = None,
     ) -> None:
-        """Registra uma alteração na tabela de auditoria."""
+        """
+        Registra uma alteração na tabela de auditoria (audit_log).
+
+        Usado para rastrear quem alterou o quê e quando, proporcionando
+        rastreabilidade completa das mudanças nos dados financeiros.
+
+        Parâmetros:
+            conn: Conexão SQLite ativa.
+            table_name: Nome da tabela alterada ('categories' ou 'transactions').
+            record_id: ID do registro alterado.
+            action: Tipo de ação ('INSERT', 'UPDATE' ou 'DELETE').
+            old_data: Dados antes da alteração (string, pode ser None).
+            new_data: Dados após a alteração (string, pode ser None).
+        """
         conn.execute(
             "INSERT INTO audit_log(table_name, record_id, action, old_data, new_data) VALUES (?, ?, ?, ?, ?)",
             (table_name, record_id, action, old_data, new_data),
         )
 
     def list_categories(self, transaction_type: TransactionType | None = None, active_only: bool = True) -> list[FinancialCategory]:
+        """
+        Lista categorias do banco, com filtros opcionais.
+
+        Parâmetros:
+            transaction_type: Se fornecido, filtra por tipo (receita/despesa/investimento).
+            active_only: Se True (padrão), retorna apenas categorias ativas.
+
+        Retorna:
+            list[FinancialCategory]: Lista ordenada por nome (case-insensitive).
+        """
         clauses, params = [], []
         if transaction_type:
             clauses.append("transaction_type = ?")
@@ -201,11 +371,34 @@ class FinancialRepository:
             return [self._category(row) for row in conn.execute(f"SELECT * FROM categories{where} ORDER BY name COLLATE NOCASE", params)]
 
     def get_category(self, category_id: int) -> Optional[FinancialCategory]:
+        """
+        Busca uma categoria pelo ID.
+
+        Parâmetros:
+            category_id (int): ID da categoria.
+
+        Retorna:
+            Optional[FinancialCategory]: A categoria ou None se não encontrada.
+        """
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
         return self._category(row) if row else None
 
     def add_category(self, category: FinancialCategory) -> FinancialCategory:
+        """
+        Insere uma nova categoria no banco.
+
+        Registra a ação na tabela de auditoria (audit_log).
+
+        Parâmetros:
+            category (FinancialCategory): Categoria a ser inserida.
+
+        Retorna:
+            FinancialCategory: A categoria com o ID atribuído pelo banco.
+
+        Levanta:
+            ValueError: Se já existir uma categoria com mesmo nome e tipo.
+        """
         try:
             with self._connect() as conn:
                 cursor = conn.execute("INSERT INTO categories(name, transaction_type, color, active) VALUES (?, ?, ?, ?)",
@@ -216,6 +409,21 @@ class FinancialRepository:
             raise ValueError("Já existe uma categoria com esse nome para este tipo.") from exc
 
     def update_category(self, category: FinancialCategory) -> FinancialCategory:
+        """
+        Atualiza uma categoria existente.
+
+        Não permite alterar o tipo de uma categoria que já possui lançamentos.
+
+        Parâmetros:
+            category (FinancialCategory): Categoria com ID e novos valores.
+
+        Retorna:
+            FinancialCategory: A categoria atualizada.
+
+        Levanta:
+            ValueError: Se categoria não tiver ID, não for encontrada, ou tentar
+                        mudar tipo de categoria com lançamentos.
+        """
         if category.id is None:
             raise ValueError("Categoria sem identificador.")
         try:
@@ -234,6 +442,18 @@ class FinancialRepository:
         return category
 
     def archive_category(self, category_id: int) -> None:
+        """
+        Arquiva uma categoria (define active=0) em vez de excluí-la.
+
+        Arquivamento preserva o histórico de lançamentos associados.
+        A categoria arquivada não aparece em novos lançamentos.
+
+        Parâmetros:
+            category_id (int): ID da categoria a ser arquivada.
+
+        Levanta:
+            ValueError: Se a categoria não for encontrada.
+        """
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
             if row is None:
@@ -244,6 +464,19 @@ class FinancialRepository:
             self._audit(conn, "categories", category_id, "UPDATE", old_data, str(dict(row)) + ", active=0")
 
     def delete_category(self, category_id: int) -> None:
+        """
+        Exclui uma categoria apenas se ela não tiver lançamentos associados.
+
+        Se a categoria estiver em uso, levanta CategoryInUseError.
+        Recomenda-se usar archive_category() em vez disso para preservar histórico.
+
+        Parâmetros:
+            category_id (int): ID da categoria a ser excluída.
+
+        Levanta:
+            ValueError: Se a categoria não for encontrada.
+            CategoryInUseError: Se a categoria possui lançamentos associados.
+        """
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
             if row is None:
@@ -256,6 +489,17 @@ class FinancialRepository:
             self._audit(conn, "categories", category_id, "DELETE", old_data, None)
 
     def add_transaction(self, transaction: FinancialTransaction) -> FinancialTransaction:
+        """
+        Insere uma nova transação no banco.
+
+        Registra a ação na tabela de auditoria.
+
+        Parâmetros:
+            transaction (FinancialTransaction): Transação a ser inserida.
+
+        Retorna:
+            FinancialTransaction: A transação com o ID atribuído pelo banco.
+        """
         with self._connect() as conn:
             cursor = conn.execute("""INSERT INTO transactions(transaction_type, description, amount_cents, category_id, occurred_on, notes)
                 VALUES (?, ?, ?, ?, ?, ?)""", (transaction.transaction_type.value, transaction.description, transaction.amount_cents,
@@ -264,6 +508,18 @@ class FinancialRepository:
         return FinancialTransaction(**{**transaction.__dict__, "id": cursor.lastrowid})
 
     def update_transaction(self, transaction: FinancialTransaction) -> FinancialTransaction:
+        """
+        Atualiza uma transação existente.
+
+        Parâmetros:
+            transaction (FinancialTransaction): Transação com ID e novos valores.
+
+        Retorna:
+            FinancialTransaction: A transação atualizada.
+
+        Levanta:
+            ValueError: Se a transação não tiver ID ou não for encontrada.
+        """
         if transaction.id is None:
             raise ValueError("Lançamento sem identificador.")
         old_data = None
@@ -280,6 +536,17 @@ class FinancialRepository:
         return transaction
 
     def delete_transaction(self, transaction_id: int) -> None:
+        """
+        Exclui uma transação pelo ID.
+
+        Registra a exclusão na tabela de auditoria.
+
+        Parâmetros:
+            transaction_id (int): ID da transação a ser excluída.
+
+        Levanta:
+            ValueError: Se a transação não for encontrada.
+        """
         old_data = None
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM transactions WHERE id = ?", (transaction_id,)).fetchone()
@@ -292,6 +559,21 @@ class FinancialRepository:
 
     def list_transactions(self, start: date | None = None, end: date | None = None,
                           transaction_type: TransactionType | None = None, category_id: int | None = None) -> list[FinancialTransaction]:
+        """
+        Lista transações com filtros opcionais de data, tipo e categoria.
+
+        Faz um JOIN com categorias para incluir category_name e category_color
+        no resultado (útil para exibição na UI).
+
+        Parâmetros:
+            start (date | None): Data inicial do filtro (inclusive).
+            end (date | None): Data final do filtro (inclusive).
+            transaction_type (TransactionType | None): Filtro por tipo.
+            category_id (int | None): Filtro por ID de categoria.
+
+        Retorna:
+            list[FinancialTransaction]: Transações ordenadas por data (mais recente primeiro).
+        """
         clauses, params = [], []
         if start:
             clauses.append("t.occurred_on >= ?"); params.append(start.isoformat())
@@ -310,7 +592,15 @@ class FinancialRepository:
     def _where_clauses(self, start: date | None = None, end: date | None = None,
                        transaction_type: TransactionType | None = None,
                        category_id: int | None = None) -> tuple[str, list]:
-        """Constrói cláusula WHERE e params para consultas de transações."""
+        """
+        Constrói cláusula WHERE e parâmetros para consultas de transações.
+
+        Método auxiliar privado usado pelos métodos de agregação SQL
+        (summary_sql, expense_by_category_sql, monthly_expenses_sql).
+
+        Retorna:
+            tuple[str, list]: (cláusula WHERE, lista de parâmetros).
+        """
         clauses, params = [], []
         if start:
             clauses.append("t.occurred_on >= ?"); params.append(start.isoformat())
@@ -326,7 +616,21 @@ class FinancialRepository:
     def summary_sql(self, start: date | None = None, end: date | None = None,
                     transaction_type: TransactionType | None = None,
                     category_id: int | None = None) -> FinancialSummary:
-        """Retorna resumo agregado direto do banco via SQL (SUM/CASE), evitando loop Python."""
+        """
+        Retorna resumo financeiro agregado diretamente via SQL.
+
+        Usa SUM(CASE ...) no banco para evitar carregar todas as transações
+        para o Python e fazer loops em Python. Muito mais eficiente para
+        grandes volumes de dados.
+
+        Parâmetros:
+            start, end: Filtro de data.
+            transaction_type: Filtro por tipo (receita/despesa/investimento).
+            category_id: Filtro por categoria.
+
+        Retorna:
+            FinancialSummary: Totais de receitas, despesas e investimentos em centavos.
+        """
         where, params = self._where_clauses(start, end, transaction_type, category_id)
         with self._connect() as conn:
             row = conn.execute(f"""
@@ -344,7 +648,19 @@ class FinancialRepository:
 
     def expense_by_category_sql(self, start: date | None = None, end: date | None = None,
                                 category_id: int | None = None) -> list[tuple[str, int, str]]:
-        """Retorna despesas agregadas por categoria direto do banco via SQL GROUP BY."""
+        """
+        Retorna despesas agregadas por categoria via SQL GROUP BY.
+
+        Usado para gerar gráficos de donut e barras no dashboard financeiro.
+
+        Parâmetros:
+            start, end: Filtro de data.
+            category_id: Filtro por categoria específico.
+
+        Retorna:
+            list[tuple[str, int, str]]: Lista de (nome_categoria, total_centavos, cor_hex).
+                                        Ordenada por total decrescente.
+        """
         where, params = self._where_clauses(start, end, TransactionType.EXPENSE, category_id)
         with self._connect() as conn:
             rows = conn.execute(f"""
@@ -358,7 +674,19 @@ class FinancialRepository:
 
     def monthly_expenses_sql(self, start: date | None = None, end: date | None = None,
                              category_id: int | None = None) -> list[tuple[str, int]]:
-        """Retorna despesas agregadas por mês direto do banco via SQL GROUP BY."""
+        """
+        Retorna despesas agregadas por mês via SQL GROUP BY.
+
+        Usado para gerar gráfico de evolução mensal de despesas.
+
+        Parâmetros:
+            start, end: Filtro de data.
+            category_id: Filtro por categoria específico.
+
+        Retorna:
+            list[tuple[str, int]]: Lista de ("AAAA-MM", total_centavos).
+                                   Ordenada por mês crescente.
+        """
         where, params = self._where_clauses(start, end, TransactionType.EXPENSE, category_id)
         with self._connect() as conn:
             rows = conn.execute(f"""

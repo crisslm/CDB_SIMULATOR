@@ -1,10 +1,28 @@
 """
 Camada de Apresentação - Janela Principal da Aplicação Gráfica
-Design Mobile-Friendly & Desktop Responsivo:
-- Adaptação dinâmica ao redimensionar a janela (< 850px ativa modo coluna única / vertical estilo mobile)
-- >= 850px ativa layout em 2 colunas estilo desktop
-- Métricas em grid fluido (2 colunas em telas estreitas, 5 colunas em telas largas)
-- Paleta Clean Warm Light (#F9F9FB, superfícies #FFFFFF)
+================================================================
+
+Este módulo contém a janela principal (ModernAppGUI) do CDB Simulator,
+construída com CustomTkinter. É responsável por:
+
+    1. Exibir a interface de simulação de CDB (juros compostos).
+    2. Exibir a interface de Controle Financeiro (receitas/despesas).
+    3. Coordenar a navegação entre as duas seções.
+    4. Validar entradas do usuário e disparar simulações.
+    5. Gerenciar layout responsivo (mobile/desktop).
+    6. Gerenciar tema claro/escuro com persistência.
+
+Arquitetura:
+    - Herda de ctk.CTk (janela principal do CustomTkinter).
+    - Usa injeção de dependência para serviços (simulador e financeiro).
+    - Comunica com as camadas de serviço e domínio para cálculos.
+
+Princípio SOLID: Dependency Inversion Principle (DIP)
+- Depende de abstrações (InvestmentSimulatorService, FinancialService),
+  não de implementações concretas.
+
+Autor: CDB Simulator
+Versão: 1.0.0
 """
 
 import json
@@ -32,17 +50,59 @@ from src.ui.gui.financial.dashboard import FinancialDashboard
 class ModernAppGUI(ctk.CTk):
     """
     Janela Principal do CDB Simulator com design responsivo (Mobile-Friendly e Desktop).
+
+    Esta classe é o ponto de entrada da interface gráfica. Ela orquestra:
+        - A barra de navegação (Simulador CDB / Controle Financeiro).
+        - A barra lateral com formulário de entrada (simulador).
+        - A área principal com cards de métricas e gráficos.
+        - O dashboard financeiro (seção separada).
+        - O gerenciamento de tema claro/escuro.
+
+    Atributos de classe:
+        BREAKPOINT_MOBILE (int): Largura em pixels abaixo da qual o layout
+                                 muda para mobile (coluna única). Padrão: 860.
+        PALETTES (dict): Paletas de cores para temas Light e Dark.
+        THEME_FILE (Path): Caminho do arquivo JSON que persiste a preferência
+                           de tema do usuário.
+
+    Atributos de instância:
+        service (InvestmentSimulatorService): Serviço de simulação de CDB.
+        financial_service (FinancialService): Serviço de controle financeiro.
+        active_section (str): Seção ativa ("simulator" ou "financial").
+        is_mobile_layout (bool|None): Indica se está em layout mobile.
+        theme_mode (str): "Light" ou "Dark".
+
+    Exemplo de uso:
+        app = ModernAppGUI()
+        app.mainloop()
     """
 
     BREAKPOINT_MOBILE = 860
 
-    # Paletas de tema (Claro / Escuro) e arquivo de persistência da preferência
+    # Paletas de tema (Claro / Escuro) importadas de components/theme
     PALETTES = PALETTES
     THEME_FILE = Path.home() / ".cdb_simulator_theme.json"
 
     def __init__(self, simulator_service: InvestmentSimulatorService = None, financial_service: FinancialService = None):
+        """
+        Inicializa a janela principal e constrói toda a interface.
+
+        Parâmetros:
+            simulator_service: Serviço de simulação (ou None para criar novo).
+            financial_service: Serviço financeiro (ou None para criar novo).
+
+        Fluxo de inicialização:
+            1. Configura serviços (injeção de dependência).
+            2. Carrega tema salvo ou usa "Light" como padrão.
+            3. Configura janela (título, tamanho, mínimo).
+            4. Constrói navegação, barra lateral e área principal.
+            5. Cria o dashboard financeiro.
+            6. Configura evento de redimensionamento.
+            7. Aplica layout inicial e tema.
+        """
         super().__init__()
 
+        # Injeção de dependência - permite substituir serviços em testes
         self.service = simulator_service or InvestmentSimulatorService()
         self.financial_service = financial_service or FinancialService()
         self.active_section = "simulator"
@@ -51,43 +111,59 @@ class ModernAppGUI(ctk.CTk):
         self._last_height = 0
         self._resize_after_id: Optional[str] = None
 
-        # Visual e Cores - o tema é carregado da preferência salva (padrão: Claro)
+        # Carrega preferência de tema salvo (padrão: Claro)
         self.theme_mode = self._load_theme()
         ctk.set_appearance_mode(self.theme_mode)
         self.configure(fg_color=self.PALETTES[self.theme_mode]["bg_root"])
 
-        # Configurações de Janela
+        # Configurações básicas da janela
         self.title("CDB Simulator • Gestão & Rendimento")
-        self.geometry("1160x780")
-        self.minsize(360, 520)  # Suporte a janelas estreitas estilo mobile
+        self.geometry("1160x780")  # Tamanho inicial
+        self.minsize(360, 520)     # Suporte a janelas estreitas estilo mobile
 
-        # Container principal com scroll para comportar telas pequenas verticalmente
+        # Container principal com scroll (permite telas pequenas verticais)
         self.root_scroll = ctk.CTkScrollableFrame(
             self,
             fg_color="#F9F9FB",
             corner_radius=0
         )
 
+        # Constrói os elementos da interface
         self._build_navigation()
         self.root_scroll.pack(fill="both", expand=True)
         self._build_sidebar()
         self._build_main_area()
-        self.financial_dashboard = FinancialDashboard(self.root_scroll, self.financial_service, self.PALETTES[self.theme_mode])
+
+        # Dashboard financeiro (seção separada do simulador)
+        self.financial_dashboard = FinancialDashboard(
+            self.root_scroll,
+            self.financial_service,
+            self.PALETTES[self.theme_mode]
+        )
+
         self._is_closing = False
+        # Garante limpeza de recursos ao fechar a janela (evita processos órfãos)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # Monitoramento contínuo de redimensionamento da janela
+        # Monitora redimensionamento para layout responsivo
         self.bind("<Configure>", self._on_window_resize)
 
-        # Dispara layout inicial e aplica o tema salvo (renderiza a simulação com as cores do tema)
+        # Layout inicial e tema
         self._apply_responsive_layout(1160)
         self._apply_theme(self.theme_mode)
 
-    def _on_close(self):
-        """Encerra completamente o Tk e os recursos gráficos da instância.
+    # -------------------------------------------------------------------------
+    # Encerramento e Limpeza
+    # -------------------------------------------------------------------------
 
-        O handler explícito evita que canvases TkAgg sobrevivam ao fechamento da
-        janela, comportamento que podia manter processos PyInstaller residentes.
+    def _on_close(self):
+        """
+        Encerra completamente o Tk e libera recursos gráficos.
+
+        Este método é chamado quando o usuário fecha a janela (botão X).
+        Ele garante que:
+            1. Canvases do Matplotlib sejam destruídos (evita processos órfãos).
+            2. Recursos Tk sejam liberados corretamente.
         """
         if self._is_closing:
             return
@@ -99,43 +175,108 @@ class ModernAppGUI(ctk.CTk):
             self.quit()
             self.destroy()
 
+    # -------------------------------------------------------------------------
+    # Navegação e Seções
+    # -------------------------------------------------------------------------
+
     def _build_navigation(self):
-        """Navegação leve entre a projeção de CDB e o controle pessoal."""
+        """
+        Constrói a barra de navegação superior com dois botões:
+            - Simulador CDB
+            - Controle Financeiro
+        """
         pal = self.PALETTES[self.theme_mode]
         self.frame_navigation = ctk.CTkFrame(self, fg_color=pal["surface"], height=58, corner_radius=0)
         self.frame_navigation.pack(fill="x")
-        self.nav_simulator = PillButton(self.frame_navigation, text="Simulador CDB", command=lambda: self._show_section("simulator"), variant="secondary", width=145)
-        self.nav_financial = PillButton(self.frame_navigation, text="Controle Financeiro", command=lambda: self._show_section("financial"), variant="secondary", width=170)
+
+        self.nav_simulator = PillButton(
+            self.frame_navigation,
+            text="Simulador CDB",
+            command=lambda: self._show_section("simulator"),
+            variant="secondary",
+            width=145,
+        )
+        self.nav_financial = PillButton(
+            self.frame_navigation,
+            text="Controle Financeiro",
+            command=lambda: self._show_section("financial"),
+            variant="secondary",
+            width=170,
+        )
         self.nav_simulator.pack(side="left", padx=(18, 6), pady=11)
         self.nav_financial.pack(side="left", padx=6, pady=11)
         self.nav_simulator.apply_theme(pal)
         self.nav_financial.apply_theme(pal)
 
     def _show_section(self, section: str):
+        """
+        Alterna entre a seção do simulador e a de controle financeiro.
+
+        Esconde a seção atual e exibe a solicitada, ajustando o layout
+        responsivo conforme necessário.
+
+        Parâmetros:
+            section (str): "simulator" ou "financial".
+        """
         self.active_section = section
         self.frame_sidebar.grid_forget()
         self.frame_main.grid_forget()
         self.financial_dashboard.grid_forget()
+
         width = max(self.winfo_width(), self.BREAKPOINT_MOBILE)
+
         if section == "financial":
+            # Exibe dashboard financeiro ocupando a largura total
             self.root_scroll.grid_columnconfigure(0, weight=1)
             self.root_scroll.grid_columnconfigure(1, weight=0)
-            self.financial_dashboard.grid(row=0, column=0, columnspan=2, padx=18 if width >= self.BREAKPOINT_MOBILE else 12, pady=18 if width >= self.BREAKPOINT_MOBILE else 12, sticky="nsew")
+            self.financial_dashboard.grid(
+                row=0, column=0, columnspan=2,
+                padx=18 if width >= self.BREAKPOINT_MOBILE else 12,
+                pady=18 if width >= self.BREAKPOINT_MOBILE else 12,
+                sticky="nsew"
+            )
             self.financial_dashboard.apply_layout(width)
             self.financial_dashboard.refresh()
         else:
+            # Volta para o simulador
             self.is_mobile_layout = None
             self._apply_responsive_layout(width)
+
         self._update_navigation()
 
     def _update_navigation(self):
+        """
+        Atualiza o estado visual dos botões de navegação
+        (qual está ativo: primary ou secondary).
+        """
         pal = self.PALETTES[self.theme_mode]
-        for button, is_active in ((self.nav_simulator, self.active_section == "simulator"), (self.nav_financial, self.active_section == "financial")):
+        for button, is_active in (
+            (self.nav_simulator, self.active_section == "simulator"),
+            (self.nav_financial, self.active_section == "financial"),
+        ):
             button._variant = "primary" if is_active else "secondary"
             button.apply_theme(pal)
 
+    # -------------------------------------------------------------------------
+    # Barra Lateral (Sidebar) - Formulário do Simulador
+    # -------------------------------------------------------------------------
+
     def _build_sidebar(self):
-        """Constrói o formulário de configuração com acabamento limpo e moderno."""
+        """
+        Constrói o formulário de entrada de parâmetros do simulador.
+
+        Campos incluídos:
+            1. Tipo de investimento (Taxa Prefixada ou CDI)
+            2. Valor inicial
+            3. Aporte mensal
+            4. Taxa de rendimento / % do CDI
+            5. Taxa base do CDI (apenas no modo CDI)
+            6. Prazo (anos ou meses)
+            7. Meta financeira
+            8. Botão "Simular Rendimento"
+
+        Também configura listas de referências para atualização de tema.
+        """
         self.frame_sidebar = ctk.CTkFrame(
             self.root_scroll,
             fg_color="#FFFFFF",
@@ -146,7 +287,7 @@ class ModernAppGUI(ctk.CTk):
 
         pal = self.PALETTES[self.theme_mode]
 
-        # Cabeçalho da sidebar com título e botão de alternância de tema (Claro/Escuro)
+        # Cabeçalho com título e botão de tema
         frame_header = ctk.CTkFrame(self.frame_sidebar, fg_color="transparent")
         frame_header.pack(fill="x", padx=16, pady=(16, 12))
 
@@ -280,7 +421,7 @@ class ModernAppGUI(ctk.CTk):
         self.combo_periodo_taxa.set("% ao ano")
         self.combo_periodo_taxa.pack(side="right")
 
-        # Campo Extra para Taxa Base do CDI (exibido apenas no modo CDI)
+        # Campo Extra para Taxa Base do CDI (apenas no modo CDI)
         self.frame_cdi_base = ctk.CTkFrame(self.frame_sidebar, fg_color="transparent")
         self.lbl_cdi_base = ctk.CTkLabel(
             self.frame_cdi_base,
@@ -363,7 +504,7 @@ class ModernAppGUI(ctk.CTk):
         self.entry_meta.insert(0, "1000000")
         self.entry_meta.pack(fill="x", padx=16, pady=(0, 16))
 
-        # Botão Principal
+        # Botão Principal - dispara a simulação
         self.btn_simular = PillButton(
             self.frame_sidebar,
             text="Simular Rendimento",
@@ -373,7 +514,7 @@ class ModernAppGUI(ctk.CTk):
         self.btn_simular.pack(fill="x", padx=16, pady=(4, 16))
         self.btn_simular.apply_theme(pal)
 
-        # Referências de widgets cujas cores mudam ao alternar o tema
+        # Referências de widgets para atualização de tema
         self._entries = [
             self.entry_inicial,
             self.entry_mensal,
@@ -397,13 +538,27 @@ class ModernAppGUI(ctk.CTk):
             self.lbl_cdi_base,
         ]
 
+    # -------------------------------------------------------------------------
+    # Tema (Claro / Escuro)
+    # -------------------------------------------------------------------------
+
     def _toggle_theme(self):
-        """Alterna entre modo claro e escuro e persiste a preferência."""
+        """
+        Alterna entre modo Claro e Escuro e persiste a preferência.
+        """
         novo_modo = "Dark" if self.theme_mode == "Light" else "Light"
         self._apply_theme(novo_modo)
 
     def _apply_theme(self, modo: str):
-        """Aplica a paleta de cores (Claro/Escuro) em toda a interface."""
+        """
+        Aplica a paleta de cores (Claro/Escuro) em toda a interface.
+
+        Atualiza cores de janela, containers, textos, entradas, botões,
+        cards e gráficos. Não reexecuta a simulação (apenas reaplica cores).
+
+        Parâmetros:
+            modo (str): "Light" ou "Dark".
+        """
         self.theme_mode = modo
         ctk.set_appearance_mode(modo)
         pal = self.PALETTES[modo]
@@ -451,17 +606,22 @@ class ModernAppGUI(ctk.CTk):
         for card in self.cards_list:
             card.apply_theme(pal)
 
-        # Gráficos (re-renderiza com as cores do novo tema)
+        # Gráficos (reaplica cores, não reexecuta simulação)
         self.chart_controller.apply_theme(pal)
         if hasattr(self, "financial_dashboard"):
             self.financial_dashboard.apply_theme(pal)
         self._update_navigation()
 
-        # Persiste a escolha do usuário
+        # Persiste a escolha do usuário em arquivo JSON
         self._save_theme()
 
     def _load_theme(self) -> str:
-        """Carrega o tema salvo em preferência (padrão: Claro)."""
+        """
+        Carrega o tema salvo no arquivo de preferência.
+
+        Retorna:
+            str: "Light" ou "Dark". Padrão: "Light".
+        """
         try:
             dados = json.loads(self.THEME_FILE.read_text(encoding="utf-8"))
             modo = dados.get("mode", "Light")
@@ -470,7 +630,9 @@ class ModernAppGUI(ctk.CTk):
             return "Light"
 
     def _save_theme(self):
-        """Salva a preferência de tema em disco."""
+        """
+        Salva a preferência de tema atual em arquivo JSON.
+        """
         try:
             self.THEME_FILE.write_text(
                 json.dumps({"mode": self.theme_mode}), encoding="utf-8"
@@ -478,8 +640,27 @@ class ModernAppGUI(ctk.CTk):
         except Exception:
             pass
 
+    # -------------------------------------------------------------------------
+    # Mudança de Estratégia (Prefixado vs CDI)
+    # -------------------------------------------------------------------------
+
     def _on_strategy_change(self, choice: str):
-        """Alterna a interface conforme o tipo de taxa selecionada."""
+        """
+        Altera a interface conforme o tipo de taxa selecionada.
+
+        Quando "CDI" é selecionado:
+            - Exibe campo "CDI ANUAL BASE".
+            - Desabilita combo "% ao ano / % ao mês".
+            - Define valor padrão 110% no campo de taxa.
+
+        Quando "Taxa Prefixada" é selecionado:
+            - Esconde campo CDI base.
+            - Habilita combo de período da taxa.
+            - Define valor padrão 12.0%.
+
+        Parâmetros:
+            choice (str): Texto selecionado no combo de estratégia.
+        """
         if "CDI" in choice:
             self.lbl_taxa.configure(text="% DO CDI (ex: 110%):")
             self.entry_taxa.delete(0, "end")
@@ -493,11 +674,19 @@ class ModernAppGUI(ctk.CTk):
             self.combo_periodo_taxa.configure(state="normal")
             self.frame_cdi_base.pack_forget()
 
+    # -------------------------------------------------------------------------
+    # Área Principal - Cards e Gráficos
+    # -------------------------------------------------------------------------
+
     def _build_main_area(self):
-        """Constrói o painel de resultados com cards e visualizador gráfico."""
+        """
+        Constrói o painel de resultados com:
+            - 5 cards de métrica (Total Aportado, Lucro Bruto, Montante Bruto,
+              Líquido Pós-IR, Tempo p/ Meta).
+            - 2 gráficos (Timeline de evolução e Barras até a meta).
+        """
         self.frame_main = ctk.CTkFrame(self.root_scroll, fg_color="transparent")
 
-        # Cabeçalho da seção
         self.lbl_section = ctk.CTkLabel(
             self.frame_main,
             text="Visão Geral do Portfólio • Projeção & Rendimento",
@@ -515,7 +704,13 @@ class ModernAppGUI(ctk.CTk):
         self.card_investido = MetricCard(self.frame_cards, "Total Aportado", "R$ 0,00")
         self.card_juros = MetricCard(self.frame_cards, "Lucro Bruto", "R$ 0,00", badge_text="+0.0%")
         self.card_total = MetricCard(self.frame_cards, "Montante Bruto", "R$ 0,00")
-        self.card_liquido = MetricCard(self.frame_cards, "Líquido (Pós-IR)", "R$ 0,00", badge_text="IR 15%", is_highlight=True)
+        self.card_liquido = MetricCard(
+            self.frame_cards,
+            "Líquido (Pós-IR)",
+            "R$ 0,00",
+            badge_text="IR 15%",
+            is_highlight=True
+        )
         self.card_meta = MetricCard(self.frame_cards, "Tempo p/ Meta", "-")
 
         self.cards_list = [
@@ -526,13 +721,13 @@ class ModernAppGUI(ctk.CTk):
             self.card_meta
         ]
 
-        # Container dos Gráficos
+        # Container dos Gráficos (2 linhas: linha e barras)
         self.frame_charts_container = ctk.CTkFrame(self.frame_main, fg_color="transparent")
         self.frame_charts_container.pack(fill="both", expand=True, pady=(0, 10))
         self.frame_charts_container.grid_rowconfigure((0, 1), weight=1)
         self.frame_charts_container.grid_columnconfigure(0, weight=1)
 
-        # Container do Gráfico de Linha
+        # Card do Gráfico de Linha (Timeline)
         self.frame_chart_card = ctk.CTkFrame(
             self.frame_charts_container,
             fg_color="#FFFFFF",
@@ -542,7 +737,7 @@ class ModernAppGUI(ctk.CTk):
         )
         self.frame_chart_card.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
 
-        # Container do Gráfico de Barras
+        # Card do Gráfico de Barras (Evolução até a meta)
         self.frame_bar_card = ctk.CTkFrame(
             self.frame_charts_container,
             fg_color="#FFFFFF",
@@ -554,14 +749,24 @@ class ModernAppGUI(ctk.CTk):
 
         self.chart_controller = InvestmentChart(self.frame_chart_card, bar_widget=self.frame_bar_card)
 
+    # -------------------------------------------------------------------------
+    # Layout Responsivo
+    # -------------------------------------------------------------------------
+
     def _on_window_resize(self, event):
-        """Disparado quando a janela é redimensionada para recalcular layout responsivo."""
-        # Filtra apenas eventos da janela principal (evita disparos de sub-widgets)
+        """
+        Disparado quando a janela é redimensionada.
+
+        Usa debounce (150ms) para evitar recálculos contínuos durante o
+        arraste da borda da janela. Só recalcula se a mudança for > 15px.
+
+        Parâmetros:
+            event: Evento de <Configure> do Tkinter.
+        """
         if event.widget == self:
             if abs(event.width - self._last_width) > 15:
                 self._last_width = event.width
                 self._last_height = event.height
-                # Debounce: adia o redesenho até o usuário parar de redimensionar
                 if self._resize_after_id is not None:
                     self.after_cancel(self._resize_after_id)
                 self._resize_after_id = self.after(
@@ -570,13 +775,24 @@ class ModernAppGUI(ctk.CTk):
 
     def _apply_responsive_layout(self, window_width: int):
         """
-        Alterna dinamicamente entre layout Mobile (coluna vertical fluida)
-        e layout Desktop (painel lateral + área principal expandida).
+        Alterna dinamicamente entre layout Mobile e Desktop.
+
+        Mobile (< 860px): Sidebar empilhada acima, cards em 2 colunas.
+        Desktop (>= 860px): Sidebar à esquerda (340px fixo), área principal à direita,
+                            cards em 5 colunas.
+
+        Parâmetros:
+            window_width (int): Largura atual da janela em pixels.
         """
         if self.active_section == "financial":
             self.frame_sidebar.grid_forget()
             self.frame_main.grid_forget()
-            self.financial_dashboard.grid(row=0, column=0, columnspan=2, padx=18 if window_width >= self.BREAKPOINT_MOBILE else 12, pady=18 if window_width >= self.BREAKPOINT_MOBILE else 12, sticky="nsew")
+            self.financial_dashboard.grid(
+                row=0, column=0, columnspan=2,
+                padx=18 if window_width >= self.BREAKPOINT_MOBILE else 12,
+                pady=18 if window_width >= self.BREAKPOINT_MOBILE else 12,
+                sticky="nsew"
+            )
             self.financial_dashboard.apply_layout(window_width)
             return
 
@@ -585,35 +801,35 @@ class ModernAppGUI(ctk.CTk):
         if is_mobile != self.is_mobile_layout:
             self.is_mobile_layout = is_mobile
 
-            # Reseta o grid do container principal
             self.root_scroll.grid_columnconfigure(0, weight=1)
             self.root_scroll.grid_columnconfigure(1, weight=1 if not is_mobile else 0)
 
-            # Remove da tela para reposicionar
             self.frame_sidebar.grid_forget()
             self.frame_main.grid_forget()
 
             if is_mobile:
-                # Layout Mobile: Empilhado verticalmente
+                # Layout Mobile: empilhado verticalmente
                 self.frame_sidebar.grid(row=0, column=0, padx=12, pady=(12, 10), sticky="ew")
                 self.frame_main.grid(row=1, column=0, padx=12, pady=(0, 16), sticky="nsew")
-
-                # Reconfigura os Cards para 2 colunas no celular
                 self._configure_cards_grid(columns=2)
             else:
-                # Layout Desktop: 2 Colunas lado a lado
+                # Layout Desktop: 2 colunas lado a lado
                 self.root_scroll.grid_columnconfigure(0, weight=0, minsize=340)
                 self.root_scroll.grid_columnconfigure(1, weight=1)
-
                 self.frame_sidebar.grid(row=0, column=0, padx=(18, 10), pady=18, sticky="nsew")
                 self.frame_main.grid(row=0, column=1, padx=(10, 18), pady=18, sticky="nsew")
-
-                # Reconfigura os Cards para linha única (5 colunas) no Desktop
                 self._configure_cards_grid(columns=5)
 
     def _configure_cards_grid(self, columns: int):
-        """Posiciona os cards de métricas de forma fluida conforme o número de colunas."""
-        # Limpa configurações anteriores do grid
+        """
+        Reconfigura o grid dos cards de métrica conforme o número de colunas.
+
+        No mobile (2 colunas), o 5º card (Tempo p/ Meta) expande ocupando
+        as 2 colunas da última linha.
+
+        Parâmetros:
+            columns (int): Número de colunas (2 para mobile, 5 para desktop).
+        """
         for c in range(5):
             self.frame_cards.grid_columnconfigure(c, weight=0)
 
@@ -626,21 +842,54 @@ class ModernAppGUI(ctk.CTk):
         for index, card in enumerate(self.cards_list):
             row = index // columns
             col = index % columns
-            
-            # Se for mobile (2 colunas) e for o último card (5º), expande ocupando as 2 colunas
+
             if columns == 2 and index == 4:
                 card.grid(row=row, column=0, columnspan=2, padx=4, pady=3, sticky="nsew")
             else:
                 card.grid(row=row, column=col, padx=4, pady=3, sticky="nsew")
 
+    # -------------------------------------------------------------------------
+    # Utilitários de Parsing
+    # -------------------------------------------------------------------------
+
     def _parse_percent(self, value: str) -> float:
-        """Converte string de percentual (ex: '12,5', '12.5', 'R$ 12,5') para float."""
+        """
+        Converte uma string de percentual para float.
+
+        Remove "R$", espaços, "%" e troca vírgula por ponto.
+        Ex: "12,5" -> 12.5, "R$ 10%" -> 10.0
+
+        Parâmetros:
+            value (str): String do percentual.
+
+        Retorna:
+            float: Valor numérico do percentual.
+        """
         raw = value.strip().replace("R$", "").replace(" ", "").replace("%", "").replace(",", ".")
         return float(raw)
 
+    # -------------------------------------------------------------------------
+    # Simulação - Ponto Principal de Ação
+    # -------------------------------------------------------------------------
+
     def on_simulate_click(self):
-        """Executa a lógica de simulação com validação completa e atualiza a interface."""
+        """
+        Executa a lógica completa de simulação quando o usuário clica
+        no botão "Simular Rendimento".
+
+        Fluxo:
+            1. Lê e valida todos os campos de entrada.
+            2. Aplica limites de segurança (valor máximo 1 trilhão).
+            3. Valida taxas (diferenciadas por estratégia: prefixado 0-100%, CDI 0-500%).
+            4. Converte prazo para meses (máximo 1200 = anti-DoS).
+            5. Cria estratégia de rendimento (CompoundInterestStrategy ou CDIStrategy).
+            6. Cria SimulationParams e chama service.simulate().
+            7. Atualiza cards e gráficos com o resultado.
+
+        Todas as exceções são capturadas e exibidas em messagebox amigáveis.
+        """
         try:
+            # Leitura e conversão dos valores monetários (suporta formato brasileiro)
             inicial = parse_amount_to_cents(self.entry_inicial.get()) / 100.0
             mensal = parse_amount_to_cents(self.entry_mensal.get()) / 100.0
             taxa_raw = self._parse_percent(self.entry_taxa.get())
@@ -648,7 +897,7 @@ class ModernAppGUI(ctk.CTk):
             meta_str = self.entry_meta.get().strip().replace(",", ".")
             meta_val = parse_amount_to_cents(meta_str) / 100.0 if meta_str else 1_000_000.0
 
-            # Limite monetário de segurança (1 trilhão)
+            # Limite monetário de segurança (1 trilhão de reais)
             LIMITE_MONETARIO = 1_000_000_000_000.0
             for nome, valor in (("Valor Inicial", inicial), ("Aporte Mensal", mensal), ("Meta", meta_val)):
                 if valor > LIMITE_MONETARIO:
@@ -694,18 +943,21 @@ class ModernAppGUI(ctk.CTk):
             return
 
         try:
-            # Conversão de prazo em meses com proteção contra período fracionário menor que 1 mês
+            # Conversão de prazo para meses
             if self.combo_tipo_periodo.get() == "Anos":
                 meses = max(1, int(round(periodo_raw * 12)))
             else:
                 meses = max(1, int(round(periodo_raw)))
 
-            # Proteção contra DoS / Estouro de memória (máximo 1200 meses = 100 anos)
+            # Limite de segurança anti-DoS (máximo 1200 meses = 100 anos)
             if meses > MAX_SIMULATION_MONTHS:
                 meses = MAX_SIMULATION_MONTHS
-                messagebox.showwarning("Aviso de Prazo", f"O prazo máximo para projeção foi ajustado para 100 anos ({MAX_SIMULATION_MONTHS} meses).")
+                messagebox.showwarning(
+                    "Aviso de Prazo",
+                    f"O prazo máximo para projeção foi ajustado para 100 anos ({MAX_SIMULATION_MONTHS} meses)."
+                )
 
-            # Estratégia de rendimento
+            # Cria estratégia de rendimento conforme seleção do usuário
             if "CDI" in self.combo_estrategia.get():
                 try:
                     cdi_base = self._parse_percent(self.entry_cdi_base.get())
@@ -740,19 +992,18 @@ class ModernAppGUI(ctk.CTk):
             )
             return
 
-        # Percentual de ganho gerado por juros
+        # Atualiza cards de métrica com os resultados
         pct_ganho = (resultado.total_interest / resultado.total_invested * 100) if resultado.total_invested > 0 else 0
         badge_lucro = f"+{pct_ganho:.1f}%"
         badge_ir = f"IR {resultado.ir_aliquota * 100:.1f}%"
 
-        # Atualização dos Cards
         self.card_investido.update_value(formatar_moeda(resultado.total_invested))
         self.card_juros.update_value(formatar_moeda(resultado.total_interest), badge_text=badge_lucro)
         self.card_total.update_value(formatar_moeda(resultado.final_balance))
         self.card_liquido.update_value(formatar_moeda(resultado.net_balance), badge_text=badge_ir)
         self.card_meta.update_value(formatar_tempo(resultado.months_to_target))
 
-        # Atualização dos Gráficos com paleta limpa
+        # Atualiza gráficos com a paleta de cores atual
         monthly_rate_bars = strategy.get_monthly_rate()
         self.chart_controller.plot_timeline(params.initial_amount, resultado.timeline)
         self.chart_controller.plot_evolution_bars(
