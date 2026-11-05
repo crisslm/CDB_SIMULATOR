@@ -13,45 +13,35 @@ Princípios SOLID aplicados:
 2. Single Responsibility Principle (SRP):
    - Focado unicamente na regra de evolução temporal e metas financeiras.
 
-Funcionalidades:
-    - Simulação mês a mês com Decimal (precisão monetária).
-    - Cálculo analítico O(1) de tempo até atingir meta (fórmula de anuidade).
-    - Cálculo de Imposto de Renda regressivo (tabela brasileira).
-    - Limite de segurança anti-DoS (máximo 1200 meses = 100 anos).
-    - Limite de montante simulado (10 trilhões) para evitar estouro de Decimal.
-
-Autor: CDB Simulator
-Versão: 1.0.0
+Constantes de negócio são importadas de src.domain.constants (single source of truth).
 """
 
 import math
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-from src.domain.models import (
+from ..domain.constants import MAX_SIMULATION_BALANCE, MAX_SIMULATION_MONTHS, ZERO_TOLERANCE
+from ..domain.models import (
     SimulationParams,
     SimulationResult,
     MonthlyRecord,
     calcular_aliquota_ir,
 )
-from src.domain.strategies import YieldStrategy
+from ..domain.strategies import YieldStrategy
 
-# =============================================================================
-# Constantes de Segurança
-# =============================================================================
+
+# Tolerância para comparação de taxa com zero (evita erro de ponto flutuante).
+# Valores absolutos menores que este são considerados zero.
+ZERO_TOLERANCE = ZERO_TOLERANCE  # reexportado para compatibilidade com testes existentes
 
 # Limite máximo de segurança para períodos (100 anos = 1200 meses).
 # Evita exaustão de memória (ataque DoS) com períodos absurdos.
-MAX_SIMULATION_MONTHS = 1200
+MAX_SIMULATION_MONTHS = MAX_SIMULATION_MONTHS  # reexportado para compatibilidade com testes existentes
 
 # Limite máximo de saldo simulado (10 trilhões de reais).
 # Impede valores exorbitantes com taxas altas (ex: 50% a.m. por 100 anos)
 # que causariam estouro de precisão do Decimal (InvalidOperation).
-MAX_SIMULATION_BALANCE = Decimal("10000000000000")  # 10 trilhões
-
-# Tolerância para comparação de taxa com zero (evita erro de ponto flutuante).
-# Valores absolutos menores que este são considerados zero.
-ZERO_TOLERANCE = 1e-12
+MAX_SIMULATION_BALANCE = MAX_SIMULATION_BALANCE  # reexportado para compatibilidade com testes existentes
 
 
 class InvestmentSimulatorService:

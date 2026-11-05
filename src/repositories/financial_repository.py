@@ -29,8 +29,9 @@ from datetime import date
 from pathlib import Path
 from typing import Iterable, Optional
 
-from src.domain.financial_models import FinancialCategory, FinancialSummary, FinancialTransaction, TransactionType
-from src.repositories.db_encryption import DatabaseEncryption
+from ..domain.financial_models import FinancialCategory, FinancialSummary, FinancialTransaction, TransactionType
+from ..repositories.db_encryption import DatabaseEncryption
+from .interfaces import FinancialRepositoryProtocol
 
 
 class CategoryInUseError(ValueError):
@@ -44,7 +45,7 @@ class CategoryInUseError(ValueError):
     pass
 
 
-class FinancialRepository:
+class FinancialRepository(FinancialRepositoryProtocol):
     """
     Repositório SQLite para o Controle Financeiro.
 

@@ -19,8 +19,11 @@
   - [4.2 Princípios SOLID Aplicados](#42-princípios-solid-aplicados)
 - [5. Componentes e Responsabilidades do Código](#5-componentes-e-responsabilidades-do-código)
   - [5.1 Camada de Domínio (`src/domain/`)](#51-camada-de-domínio-srcdomain)
-  - [5.2 Camada de Serviços (`src/services/`)](#52-camada-de-serviços-srcservices)
-  - [5.3 Camada de Apresentação (`src/ui/`)](#53-camada-de-apresentação-srcui)
+  - [5.2 Camada de Casos de Uso (`src/use_cases/`)](#52-camada-de-casos-de-uso-srcuse_cases)
+  - [5.3 Camada de Serviços (`src/services/`)](#53-camada-de-serviços-srcservices)
+  - [5.4 Camada de Repositórios (`src/repositories/`)](#54-camada-de-repositórios-srcrepositories)
+  - [5.5 Camada de Apresentação (`src/ui/`)](#55-camada-de-apresentação-srcui)
+  - [5.6 Configuração (`src/config.py`)](#56-configuração-srcconfigpy)
 - [6. Regras de Negócio e Ciclo de Cálculo](#6-regras-de-negócio-e-ciclo-de-cálculo)
   - [6.1 Capitalização e Juros Compostos](#61-capitalização-e-juros-compostos)
   - [6.2 Tabela Regressiva de Imposto de Renda (IR)](#62-tabela-regressiva-de-imposto-de-renda-ir)
@@ -36,7 +39,8 @@
   - [9.3 Scripts de Automação (`project`)](#93-scripts-de-automação-project)
 - [10. Testes Automatizados e Qualidade](#10-testes-automatizados-e-qualidade)
 - [11. Build e Distribuição (.EXE)](#11-build-e-distribuição-exe)
-- [12. Histórico de Melhorias e Correções](#12-histórico-de-melhorias-e-correções)
+- [12. Variáveis de Ambiente (`.env`)](#12-variáveis-de-ambiente-env)
+- [13. Histórico de Melhorias e Correções](#13-histórico-de-melhorias-e-correções)
 
 ---
 
@@ -65,6 +69,7 @@ A aplicação conta com arquitetura responsiva que se molda dinamicamente ao tam
 - **Proteção Contra Sobrecarga (Anti-DoS):** Validação de valores nulos, negativos e teto máximo de prazo (100 anos / 1.200 meses) para proteger a aplicação contra travamento por consumo excessivo de memória.
 - **Interface Gráfica (GUI):** Interface desktop com tema **Clean Light / Fintech** e suporte completo a **Modo Escuro** (Dark Mode), com alternância via botão no cabeçalho da barra lateral e persistência da preferência entre reinicializações (`~/.cdb_simulator_theme.json`). Toda a paleta (fundo, superfícies, inputs, cards, badges, botões, gráficos e legendas) se adapta dinamicamente ao tema escolhido.
 - **Controle Financeiro persistente:** Nova seção da GUI para registrar receitas, despesas e aportes, com categorias personalizáveis, filtros temporais, histórico editável e gráficos dinâmicos. Os dados ficam em SQLite local, criptografados em repouso, fora do repositório.
+- **Camada de Casos de Uso (Use Cases):** Orquestração de regras de negócio separada da UI, permitindo reutilização da lógica em outras interfaces (CLI, API, etc.) e facilitando testes.
 - **Automação Completa:** Scripts unificados (`.bat`, `.ps1`, `.sh`) com pipeline que só permite rodar o software se todos os testes unitários passarem.
 
 ---
@@ -77,8 +82,9 @@ A aplicação conta com arquitetura responsiva que se molda dinamicamente ao tam
 | **CustomTkinter** | == 6.0.0 | Toolkit de GUI Desktop | Extensão moderna sobre o Tkinter nativo. Fornece widgets modernos, cantos arredondados, paletas consistentes e suporte a High-DPI sem o overhead de Chromium/Electron. |
 | **Matplotlib** | == 3.8.0 | Motor Gráfico | Renderizador visual integrado à janela via `FigureCanvasTkAgg`. Reutilização de canvas para máxima fluidez e limpeza visual sem molduras pesadas (*despined*). |
 | **Pytest** | == 8.0.0 | Testes Unitários | Framework de testes rápido e conciso. Configurado via `pytest.ini` para execução direta. |
-| **PyInstaller** | == 6.0.0 | Empacotamento | Gera executáveis nativos independentes (`.exe` no Windows) sem exigir Python instalado na máquina final. |
+| **PyInstaller** | == 6.10.0 | Empacotamento | Gera executáveis nativos independentes (`.exe` no Windows) sem exigir Python instalado na máquina final. |
 | **cryptography** | == 42.0.8 | Criptografia | Criptografia de arquivo (Fernet/AES-128 + HMAC-SHA256) para o banco de dados do Controle Financeiro em repouso. |
+| **python-dotenv** | == 1.0.0 | Configuração | Carrega variáveis de ambiente do arquivo `.env` para configuração externa tipada. |
 
 ---
 
@@ -89,9 +95,15 @@ O projeto adota uma arquitetura em camadas (**Clean / Layered Architecture**), d
 ```
                       ┌─────────────────────────┐
                       │    Camada de UI / Apres. │
-                      │  (main_gui.py, CLI, GUI)│
+                      │  (main_gui.py, GUI)      │
                       └────────────┬────────────┘
                                    │  (Usa)
+                                   ▼
+                      ┌─────────────────────────┐
+                      │   Camada de Casos de Uso │
+                      │   (src/use_cases/)       │
+                      └────────────┬────────────┘
+                                   │  (Orquestra)
                                    ▼
                       ┌─────────────────────────┐
                       │   Camada de Serviços    │
@@ -102,6 +114,12 @@ O projeto adota uma arquitetura em camadas (**Clean / Layered Architecture**), d
                       ┌─────────────────────────┐
                       │    Camada de Domínio    │
                       │(YieldStrategy, Models)  │
+                      └────────────┬────────────┘
+                                   │  (Persiste)
+                                   ▼
+                      ┌─────────────────────────┐
+                      │   Camada de Repositórios │
+                      │(SQLite criptografado)   │
                       └─────────────────────────┘
 ```
 
@@ -111,19 +129,30 @@ O projeto adota uma arquitetura em camadas (**Clean / Layered Architecture**), d
 CDB Simulator/
 │
 ├── src/                                  # Código-fonte principal modularizado
+│   ├── config.py                         # Configuração via .env (NOVO)
 │   ├── domain/                           # Regras de negócio puras (sem dependências de UI)
 │   │   ├── __init__.py                   # Exportação explícita de símbolos do domínio
+│   │   ├── constants.py                  # Constantes centralizadas de negócio (NOVO)
+│   │   ├── financial_models.py           # Entidades do controle financeiro
+│   │   ├── financial_utils.py            # Utilitários financeiros puros (NOVO)
 │   │   ├── models.py                     # Dataclasses de dados, DTOs e cálculo de IR
 │   │   └── strategies.py                 # Contrato YieldStrategy, Prefixado e CDI
 │   │
-│   ├── services/                         # Casos de uso e orquestração financeira
+│   ├── services/                         # Lógica de negócio e orquestração
 │   │   ├── __init__.py
-│   │   ├── simulator_service.py          # Lógica de simulação, IR e metas analíticas
+│   │   ├── simulator_service.py          # Motor de simulação, IR e metas analíticas
 │   │   └── financial_service.py          # Casos de uso, filtros e agregações financeiras
+│   │
 │   ├── repositories/                     # Adaptadores de persistência
 │   │   ├── __init__.py
 │   │   ├── financial_repository.py       # Banco SQLite versionado do Controle Financeiro
-│   │   └── db_encryption.py              # Criptografia do banco SQLite (Fernet/AES-128)
+│   │   ├── db_encryption.py              # Criptografia do banco SQLite (Fernet/AES-128)
+│   │   └── interfaces.py                 # Protocolo abstrato para repositório (NOVO)
+│   │
+│   ├── use_cases/                        # Camada de Casos de Uso (NOVO)
+│   │   ├── __init__.py
+│   │   ├── simulate_investment.py        # Caso de uso de simulação de investimento
+│   │   └── financial_use_cases.py        # Casos de uso do controle financeiro
 │   │
 │   └── ui/                               # Camada de apresentação
 │       ├── __init__.py
@@ -132,13 +161,18 @@ CDB Simulator/
 │           ├── app.py                    # Janela principal responsiva (Mobile/Desktop)
 │           ├── components.py             # Cards de métricas, botões Pill e formatadores
 │           ├── chart.py                  # Canvas Matplotlib performático
-│           └── theme.py                  # Paletas de cores (Claro/Escuro) — módulo independente
+│           ├── theme.py                  # Paletas de cores (Claro/Escuro) — módulo independente
+│           └── financial/                # Módulo do Controle Financeiro
+│               ├── __init__.py
+│               ├── dashboard.py          # Tela do Controle Financeiro
+│               └── financial_charts.py   # Gráficos financeiros (donut e barras)
 │
 ├── tests/                                # Testes automatizados (pytest)
 │   ├── test_domain.py                    # Testes de estratégias, CDI e IR regressivo
 │   ├── test_financial.py                 # Testes do Controle Financeiro
-│   ├── test_security_and_validations.py  # Testes de segurança e validações de correções
-│   └── test_services.py                  # Testes do serviço, metas analíticas e limites
+│   ├── test_security_and_validations.py  # Testes de segurança e validações
+│   ├── test_services.py                  # Testes do serviço, metas analíticas e limites
+│   └── test_use_cases.py                 # Testes de casos de uso (NOVO)
 │
 ├── .gitignore                            # Exclusão de caches, executáveis e arquivos temporários
 ├── pytest.ini                            # Configuração global de execução do pytest
@@ -148,16 +182,21 @@ CDB Simulator/
 ├── project.sh                            # Script utilitário para Bash (Linux / Git Bash / WSL)
 ├── requirements.txt                      # Declaração formal de dependências do Python
 ├── update.txt                            # Guia rápido de compilação
-└── CDB_Simulator.spec                    # Spec do PyInstaller para build do executável
+├── CDB_Simulator.spec                    # Spec do PyInstaller para build do executável
+└── CDB_Simulator.iss                     # Script Inno Setup para instalador Windows
 ```
 
 ### 4.2 Princípios SOLID Aplicados
 
-1. **S — Single Responsibility Principle (SRP):** Cada módulo tem uma responsabilidade estrita (`models` para estruturas e IR, `strategies` para taxas, `chart` para visualização gráfica, `simulator_service` para evolução patrimonial).
-2. **O — Open/Closed Principle (OCP):** A classe abstrata `YieldStrategy` define o contrato `get_monthly_rate()`. Para criar novas modalidades de investimento (ex.: *IPCA+*, *LCI/LCA com isenção*), basta estender a classe base sem modificar o serviço.
+1. **S — Single Responsibility Principle (SRP):** Cada módulo tem uma responsabilidade estrita (`models` para estruturas e IR, `strategies` para taxas, `chart` para visualização gráfica, `simulator_service` para evolução patrimonial, `use_cases` para orquestração de regras de negócio).
+
+2. **O — Open/Closed Principle (OCP):** A classe abstrata `YieldStrategy` define o contrato `get_monthly_rate()`. Para criar novas modalidades de investimento (ex.: *IPCA+*, *LCI/LCA com isenção*), basta estender a classe base sem modificar o código existente.
+
 3. **L — Liskov Substitution Principle (LSP):** `CompoundInterestStrategy` e `CDIStrategy` implementam integralmente o contrato e são utilizadas intercambiavelmente.
-4. **I — Interface Segregation Principle (ISP):** O contrato `YieldStrategy` é conciso e focado (`get_monthly_rate()` e `get_description()`).
-5. **D — Dependency Inversion Principle (DIP):** O orquestrador depende da abstração `YieldStrategy`, permitindo injeção de dependência flexível e facilidade nos testes unitários.
+
+4. **I — Interface Segregation Principle (ISP):** O contrato `YieldStrategy` é conciso e focado (`get_monthly_rate()` e `get_description()`). O `FinancialRepositoryProtocol` define apenas os métodos necessários de persistência.
+
+5. **D — Dependency Inversion Principle (DIP):** Os serviços e casos de uso dependem de abstrações (`YieldStrategy`, `FinancialRepositoryProtocol`), permitindo injeção de dependência flexível e facilidade nos testes unitários.
 
 ---
 
@@ -165,34 +204,40 @@ CDB Simulator/
 
 ### 5.1 Camada de Domínio (`src/domain/`)
 
-- **[models.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/domain/models.py):**
-  - `calcular_aliquota_ir(meses: int) -> float`: Retorna a alíquota de IR de acordo com o prazo.
-  - `MonthlyRecord`: Registro individual de cada mês.
-  - `SimulationParams`: Parâmetros imutáveis de entrada.
-  - `SimulationResult`: DTO completo com montante investido, juros brutos, saldo bruto, alíquota de IR, total de IR retido, juros líquidos e saldo líquido final.
-- **[strategies.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/domain/strategies.py):**
-  - `CompoundInterestStrategy`: Suporte à taxa equivalente composta $((1 + i)^{1/12} - 1)$ ou nominal.
-  - `CDIStrategy`: Aplica o percentual contratado sobre a taxa CDI base anual informada pelo usuário.
+- **[models.py]:** `calcular_aliquota_ir(meses: int) -> float`, `MonthlyRecord`, `SimulationParams`, `SimulationResult`.
+- **[strategies.py]:** `CompoundInterestStrategy` (taxa prefixada), `CDIStrategy` (CDB pós-fixado % do CDI), `YieldStrategy` (contrato abstrato).
+- **[financial_models.py]:** `TransactionType`, `FinancialCategory`, `FinancialTransaction`, `FinancialSummary`.
+- **[constants.py]:** Constantes centralizadas de negócio e segurança (`MAX_SIMULATION_MONTHS`, `ZERO_TOLERANCE`, `LIMITE_MONETARIO`, limites de taxa, faixas de IR).
+- **[financial_utils.py]:** Utilitários financeiros puros (`parse_amount_to_cents`, `format_cents`, `parse_br_date`, `period_range`, agregações).
 
-### 5.2 Camada de Serviços (`src/services/`)
+### 5.2 Camada de Casos de Uso (`src/use_cases/`) — NOVA CAMADA
 
-- **[simulator_service.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/services/simulator_service.py):**
-  - `simulate`: Executa o avanço mensal respeitando o teto de segurança `MAX_SIMULATION_MONTHS` e computa o resumo bruto e líquido pós-IR.
-  - `calculate_months_to_target`: Resolve matematicamente em $O(1)$ o número de meses necessários para atingir qualquer meta patrimonial positiva.
+- **[simulate_investment.py]:** `SimulateInvestmentUseCase` com DTOs `SimulationInput` e `SimulationOutput`. Orquestra conversão de valores, validação de limites, criação de estratégia, chamada ao serviço e retorno de resultado para a UI.
+- **[financial_use_cases.py]:** `FinancialUseCases`. CRUD de categorias e transações, consultas agregadas.
 
-### 5.3 Camada de Apresentação (`src/ui/`)
+### 5.3 Camada de Serviços (`src/services/`)
 
-- **[app.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/gui/app.py):**
-  - Janela principal responsiva equipada com container `CTkScrollableFrame`.
-  - Mecanismo dinâmico `_apply_responsive_layout(width)` disparado pelo evento `<Configure>`.
-  - Reorganização automática dos cards de métricas entre 2 e 5 colunas.
-  - Alternância dinâmica de campos: ao selecionar CDB pós-fixado, abre o campo de **Taxa CDI Base (% a.a.)**.
-  - **Botão de Alternância de Tema:** Permite alternar entre Modo Claro e Modo Escuro com persistência da preferência em arquivo JSON local (`~/.cdb_simulator_theme.json`). A reaplicação de cores é aplicada em toda a interface (fundo, superfícies, inputs, cards, badges, botões e gráficos Matplotlib).
-  - Validações completas para valores negativos, metas inválidas, prazos fracionários, limite superior de taxa (0–100%) e tratamento genérico de exceções inesperadas.
-- **[chart.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/gui/chart.py):**
-  - Controlador gráfico de alta eficiência que reutiliza a mesma `Figure` e `Canvas`, limpando apenas os eixos (`ax.clear()`) e desenhando de forma assíncrona (`draw_idle()`).
-- **[theme.py](file:///C:/Users/crist/OneDrive/Área%20de%20Trabalho/CDB%20Simulator/src/ui/gui/theme.py):**
-  - Módulo independente com `PALETTES` e `THEME_MODES` (Claro/Escuro), importado por `components.py` e `chart.py`, eliminando qualquer ciclo de importação.
+- **[simulator_service.py]:** `InvestmentSimulatorService.simulate()`, `calculate_months_to_target()`, constantes de segurança (`MAX_SIMULATION_MONTHS`, `ZERO_TOLERANCE`, `MAX_SIMULATION_BALANCE`).
+- **[financial_service.py]:** `FinancialService` — gerencia categorias, transações, resumos, filtros e agregações. Delega métodos estáticos para `financial_utils`.
+
+### 5.4 Camada de Repositórios (`src/repositories/`)
+
+- **[financial_repository.py]:** `FinancialRepository` implementa `FinancialRepositoryProtocol`. CRUD completo, criptografia opcional, tabela de auditoria (`audit_log`), consultas SQL agregadas.
+- **[db_encryption.py]:** `DatabaseEncryption` — Fernet/AES-128 + HMAC-SHA256, gerenciamento de chave via variável de ambiente ou arquivo `.db_key`.
+- **[interfaces.py]:** `FinancialRepositoryProtocol` — protocolo abstrato para repositórios, permite injeção de dependência e mock em testes.
+
+### 5.5 Camada de Apresentação (`src/ui/`)
+
+- **[app.py]:** `ModernAppGUI` — janela principal responsiva, usa casos de uso para lógica de negócio, imports relativos, tratamento de exceções específico.
+- **[components.py]:** `MetricCard`, `PillButton`, `formatar_moeda()`, `formatar_tempo()`.
+- **[theme.py]:** `PALETTES`, `THEME_MODES` — módulo independente para evitar ciclos de importação.
+- **[chart.py]:** `InvestmentChart` — gráficos Matplotlib reutilizáveis com `draw_idle()`.
+- **[financial/dashboard.py]:** `FinancialDashboard` — tela completa do Controle Financeiro.
+- **[financial/financial_charts.py]:** Gráficos de donut e barras.
+
+### 5.6 Configuração (`src/config.py`) — NOVO
+
+Carrega variáveis de ambiente do arquivo `.env` (se existir) via `python-dotenv` e expõe configurações tipadas para toda a aplicação.
 
 ---
 
@@ -299,6 +344,17 @@ pip install -r requirements.txt
 pytest
 ```
 
+### Configuração externa (`.env`)
+
+Crie um arquivo `.env` na raiz do projeto (copiando `.env.example`) para configurar a aplicação externamente:
+
+```env
+CDB_DB_ENCRYPTION_KEY=sua_chave_fernet_aqui
+CDB_APP_THEME=Light
+CDB_MAX_SIMULATION_MONTHS=1200
+CDB_LIMITE_MONETARIO=1000000000000.0
+```
+
 ---
 
 ## 9. Execução da Aplicação
@@ -347,7 +403,7 @@ Exemplo: `C:\Users\SeuNome\.cdb_simulator\financial.sqlite3.enc`
 
 #### Instalador opcional
 
-Se preferir um instalador com atalho no Iniciar e desinstalador, você pode empacotar o `dist/CDB_Simulator.exe` com o [Inno Setup](https://jrsoftware.org/isinfo.php) (gratuito) ou [NSIS](https://nsis.sourceforge.io/). O instalador **não deve remover** a pasta `~/.cdb_simulator/` durante a desinstalação.
+Se preferir um instalador com atalho no Iniciar e desinstalador, você pode empacotar o `dist/CDB_Simulator.exe` com o [Inno Setup](https://jrsoftware.org/isinfo.php) (gratuito) ou [NSIS](https://nsis.sourceforge.net/). O instalador **não deve remover** a pasta `~/.cdb_simulator/` durante a desinstalação.
 
 ---
 
@@ -382,6 +438,10 @@ A seguir, todas as correções aplicadas nas versões recentes:
 | 10 | **Dependências não fixadas** | Baixa | `requirements.txt` agora usa versões fixas (`==`) para reprodutibilidade de builds. |
 | 11 | **Sem tratamento genérico de exceções na GUI** | Baixa | `on_simulate_click` agora captura `Exception` genérico com `messagebox.showerror` amigável. |
 | 12 | **Sem auditoria de alterações financeiras** | Baixa | Nova tabela `audit_log` registra INSERT, UPDATE e DELETE de transações com timestamps. |
+| 13 | **Imports absolutos acoplados (`src.`)** | Média | Substituídos por imports relativos em todo o código-fonte. |
+| 14 | **Lógica de negócio na UI** | Média | Nova camada de Casos de Uso (`src/use_cases/`) orquestra regras de negócio, separando UI de domínio. |
+| 15 | **Constantes espalhadas** | Média | Constantes centralizadas em `src/domain/constants.py` (single source of truth). |
+| 16 | **Sem interface abstrata para repositório** | Média | Criado `FinancialRepositoryProtocol` em `src/repositories/interfaces.py`. |
 
 ### 10.3 Testes Automatizados e Qualidade
 
@@ -392,6 +452,7 @@ pytest
 ```
 
 ### Cobertura de Testes
+
 - **Taxas de Juros (`test_domain.py`):**
   - Taxa direta ao mês.
   - Taxa anual nominal vs. taxa equivalente composta.
@@ -415,12 +476,25 @@ pytest
   - Proteção contra limites abusivos de prazo (limite de 100 anos anti-DoS).
 - **Controle Financeiro (`test_financial.py`):**
   - Cálculos, persistência, filtros, agregações, edição, exclusão e receita zero.
+- **Casos de Uso (`test_use_cases.py`) — NOVO:**
+  - Simulação com taxa prefixada.
+  - Simulação com CDI.
+  - Validação de valores negativos rejeitados.
+  - Validação de taxa acima do limite rejeitada.
+  - Validação de percentual CDI acima do limite rejeitado.
+  - Validação de CDI base inválido rejeitado.
+  - Validação de meta zero rejeitada.
+  - Truncamento de prazo excedente ao limite anti-DoS.
+  - Cálculo de IR com datas de início e fim.
+  - Campos obrigatórios do output.
+  - Injeção de dependência no caso de uso.
 
 ---
 
 ## 11. Build e Distribuição (.EXE)
 
 A compilação do executável é gerenciada pelo comando `project update`:
+
 1. Executa a suíte de testes unitários automatizados com `pytest`.
 2. Em caso de falha, o build é **imediatamente bloqueado**.
 3. Se todos os testes passarem, o PyInstaller compila um novo executável otimizado em:
@@ -432,34 +506,47 @@ O executável pode ser distribuído independentemente, não exigindo Python inst
 
 ---
 
-## 12. Histórico de Melhorias e Correções
+## 12. Variáveis de Ambiente (`.env`)
+
+| Variável | Descrição | Exemplo |
+|----------|-----------|---------|
+| `CDB_DB_ENCRYPTION_KEY` | Chave Fernet para criptografia do banco | base64-encoded-key |
+| `CDB_APP_THEME` | Tema padrão (Light/Dark) | `Light` |
+| `CDB_MAX_SIMULATION_MONTHS` | Limite máximo de meses para simulação | `1200` |
+| `CDB_LIMITE_MONETARIO` | Limite monetário de segurança | `1000000000000.0` |
+| `CDB_TAXA_JUROS_MAX` | Limite superior para taxa de juros (%) | `100.0` |
+| `CDB_CDI_PERCENTUAL_MAX` | Limite superior para % do CDI | `500.0` |
+| `CDB_CDI_BASE_MAX` | Limite superior para taxa base CDI | `100.0` |
+
+Crie um arquivo `.env` na raiz copiando `.env.example` e preencha com sua chave.
+
+---
+
+## 13. Histórico de Melhorias e Correções
 
 - **Controle Financeiro:** adicionada seção independente na GUI, acessível pela barra superior. Permite criar receitas, despesas e investimentos; editar ou excluir lançamentos; filtrar por tipo, categoria e período; e gerenciar categorias com arquivamento seguro quando há lançamentos associados. Os indicadores usam centavos inteiros, e os gráficos reutilizam a mesma `Figure`/canvas Matplotlib com `draw_idle`.
-
-### Como usar o Controle Financeiro
-
-1. Abra `main_gui.py` e selecione **Controle Financeiro** na barra superior.
-2. Registre um lançamento informando tipo, descrição, valor, categoria e data. Valores como `1250,50` ou `R$ 1.250,50` são aceitos.
-3. Use **Gerenciar categorias** para adicionar, editar ou remover categorias. Uma categoria usada será arquivada, nunca apagada silenciosamente.
-4. Escolha o período, tipo e categoria nos filtros. Os cards, o gráfico de rosca, o gráfico de barras/evolução mensal e o histórico são atualizados na hora.
-
-O banco é criado em `~/.cdb_simulator/financial.sqlite3`, portanto não é incluído no Git nem perdido ao fechar a aplicação. A suíte inclui `tests/test_financial.py`, cobrindo cálculos, persistência, filtros, agregações, edição, exclusão e receita zero.
 
 - **Interface Mobile-Friendly e Layout Responsivo (UX):**
   - Implementado sistema reativo com detecção de redimensionamento em tempo real.
   - Breakpoint dinâmico em 860px alternando entre visualização empilhada vertical (mobile) e painel duplo lateral (desktop).
   - Grid flexível de cards (2 colunas em mobile e 5 colunas em desktop).
   - Janela mínima ajustada para 360x520 com suporte a rolagem integral via `CTkScrollableFrame`.
+
 - **Matemática Financeira:** Substituída a conversão linear simples por taxa equivalente mensal exponencial composta.
+
 - **Tributação (IR):** Incorporado o cálculo oficial do Imposto de Renda regressivo para CDBs e Renda Fixa, apresentando montantes brutos e líquidos.
+
 - **CDI Parametrizável:** Adicionado campo dinâmico na interface gráfica e na CLI para alteração da taxa anual base do CDI.
+
 - **Otimização de Desempenho:**
   - Resolução da meta patrimonial migrada de loop iterativo para fórmula fechada analítica em $O(1)$.
   - Canvas do Matplotlib refatorado para reuso de instância com `ax.clear()` e `draw_idle()`, eliminando flickering e vazamento de memória.
+
 - **Resiliência e Segurança:**
   - Limite de segurança anti-DoS para prazos longos (`MAX_SIMULATION_MONTHS = 1200`).
   - Validação estrita de metas financeiras positivas e prazos não nulos.
   - Adicionado `.gitignore` completo e configuração oficial `pytest.ini`.
+
 - **Tema Claro / Escuro:**
   - Implementado botão de alternância de tema na barra lateral da GUI com persistência da preferência entre sessões.
   - Criação de paletas de cores dedicadas para Modo Claro e Modo Escuro, aplicadas dinamicamente a inputs, cards, badges, botões e gráficos Matplotlib.
@@ -469,5 +556,15 @@ O banco é criado em `~/.cdb_simulator/financial.sqlite3`, portanto não é incl
   - O banco SQLite do Controle Financeiro passou a ser armazenado **criptografado em repouso** (`.enc`) via Fernet/AES-128 + HMAC-SHA256, protegendo receitas, despesas e investimentos contra leitura não autorizada no dispositivo.
   - Chave simétrica gerada automaticamente e armazenada com permissões restritas (`.db_key`).
 
+- **Arquitetura (Versão 1.1.0):**
+  - Nova camada de Casos de Uso (`src/use_cases/`) separando lógica de negócio da UI.
+  - Constantes centralizadas em `src/domain/constants.py` (single source of truth).
+  - Utilitários financeiros puros em `src/domain/financial_utils.py`.
+  - Interface abstrata `FinancialRepositoryProtocol` em `src/repositories/interfaces.py`.
+  - Configuração externa via `.env` em `src/config.py`.
+  - Imports relativos em todo o código-fonte (eliminado acoplamento a `src.`).
+  - Novos testes de casos de uso em `tests/test_use_cases.py`.
+
 ---
+
 # CDB_SIMULATOR

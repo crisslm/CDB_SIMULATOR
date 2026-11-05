@@ -26,9 +26,7 @@ Versão: 1.0.0
 
 from abc import ABC, abstractmethod
 
-# Tolerância para comparação de taxa com zero (evita erro de ponto flutuante)
-# Valores menores que este são considerados zero.
-ZERO_TOLERANCE = 1e-12
+from .constants import ZERO_TOLERANCE
 
 
 class YieldStrategy(ABC):

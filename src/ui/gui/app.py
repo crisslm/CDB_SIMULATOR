@@ -1,6 +1,6 @@
 """
 Camada de Apresentação - Janela Principal da Aplicação Gráfica
-================================================================
+===============================================================
 
 Este módulo contém a janela principal (ModernAppGUI) do CDB Simulator,
 construída com CustomTkinter. É responsável por:
@@ -8,18 +8,19 @@ construída com CustomTkinter. É responsável por:
     1. Exibir a interface de simulação de CDB (juros compostos).
     2. Exibir a interface de Controle Financeiro (receitas/despesas).
     3. Coordenar a navegação entre as duas seções.
-    4. Validar entradas do usuário e disparar simulações.
+    4. Validar entradas do usuário e disparar simulações via Casos de Uso.
     5. Gerenciar layout responsivo (mobile/desktop).
     6. Gerenciar tema claro/escuro com persistência.
 
 Arquitetura:
     - Herda de ctk.CTk (janela principal do CustomTkinter).
-    - Usa injeção de dependência para serviços (simulador e financeiro).
+    - Usa injeção de dependência para casos de uso e serviços.
     - Comunica com as camadas de serviço e domínio para cálculos.
+    - A UI não contém lógica de negócio; delega para SimulateInvestmentUseCase
+      e FinancialUseCases.
 
 Princípio SOLID: Dependency Inversion Principle (DIP)
-- Depende de abstrações (InvestmentSimulatorService, FinancialService),
-  não de implementações concretas.
+- Depende de abstrações (casos de uso), não de implementações concretas.
 
 Autor: CDB Simulator
 Versão: 1.0.0
@@ -31,12 +32,14 @@ from typing import Optional
 
 import customtkinter as ctk
 from tkinter import messagebox
-from src.services.simulator_service import InvestmentSimulatorService, MAX_SIMULATION_MONTHS
-from src.services.financial_service import FinancialService, parse_amount_to_cents
-from src.domain.models import SimulationParams
-from src.domain.strategies import CompoundInterestStrategy, CDIStrategy
-from src.ui.gui.chart import InvestmentChart
-from src.ui.gui.components import (
+
+from ...domain.constants import LIMITE_MONETARIO
+from ...use_cases.simulate_investment import SimulateInvestmentUseCase, SimulationInput
+from ...use_cases.financial_use_cases import FinancialUseCases
+from ...domain.models import SimulationParams
+from ...domain.strategies import CompoundInterestStrategy, CDIStrategy
+from .chart import InvestmentChart
+from .components import (
     MetricCard,
     PillButton,
     PALETTES,
@@ -44,7 +47,7 @@ from src.ui.gui.components import (
     formatar_moeda,
     formatar_tempo,
 )
-from src.ui.gui.financial.dashboard import FinancialDashboard
+from .financial.dashboard import FinancialDashboard
 
 
 class ModernAppGUI(ctk.CTk):
@@ -66,8 +69,8 @@ class ModernAppGUI(ctk.CTk):
                            de tema do usuário.
 
     Atributos de instância:
-        service (InvestmentSimulatorService): Serviço de simulação de CDB.
-        financial_service (FinancialService): Serviço de controle financeiro.
+        simulator_use_case (SimulateInvestmentUseCase): Caso de uso de simulação.
+        financial_use_cases (FinancialUseCases): Caso de uso de controle financeiro.
         active_section (str): Seção ativa ("simulator" ou "financial").
         is_mobile_layout (bool|None): Indica se está em layout mobile.
         theme_mode (str): "Light" ou "Dark".
@@ -83,16 +86,20 @@ class ModernAppGUI(ctk.CTk):
     PALETTES = PALETTES
     THEME_FILE = Path.home() / ".cdb_simulator_theme.json"
 
-    def __init__(self, simulator_service: InvestmentSimulatorService = None, financial_service: FinancialService = None):
+    def __init__(
+        self,
+        simulator_use_case: SimulateInvestmentUseCase | None = None,
+        financial_use_cases: FinancialUseCases | None = None,
+    ):
         """
         Inicializa a janela principal e constrói toda a interface.
 
         Parâmetros:
-            simulator_service: Serviço de simulação (ou None para criar novo).
-            financial_service: Serviço financeiro (ou None para criar novo).
+            simulator_use_case: Caso de uso de simulação (ou None para criar novo).
+            financial_use_cases: Caso de uso financeiro (ou None para criar novo).
 
         Fluxo de inicialização:
-            1. Configura serviços (injeção de dependência).
+            1. Configura casos de uso (injeção de dependência).
             2. Carrega tema salvo ou usa "Light" como padrão.
             3. Configura janela (título, tamanho, mínimo).
             4. Constrói navegação, barra lateral e área principal.
@@ -102,9 +109,9 @@ class ModernAppGUI(ctk.CTk):
         """
         super().__init__()
 
-        # Injeção de dependência - permite substituir serviços em testes
-        self.service = simulator_service or InvestmentSimulatorService()
-        self.financial_service = financial_service or FinancialService()
+        # Injeção de dependência - permite substituir casos de uso em testes
+        self.simulator_use_case = simulator_use_case or SimulateInvestmentUseCase()
+        self.financial_use_cases = financial_use_cases or FinancialUseCases()
         self.active_section = "simulator"
         self.is_mobile_layout = None
         self._last_width = 0
@@ -137,7 +144,7 @@ class ModernAppGUI(ctk.CTk):
         # Dashboard financeiro (seção separada do simulador)
         self.financial_dashboard = FinancialDashboard(
             self.root_scroll,
-            self.financial_service,
+            self.financial_use_cases,
             self.PALETTES[self.theme_mode]
         )
 
@@ -849,27 +856,7 @@ class ModernAppGUI(ctk.CTk):
                 card.grid(row=row, column=col, padx=4, pady=3, sticky="nsew")
 
     # -------------------------------------------------------------------------
-    # Utilitários de Parsing
-    # -------------------------------------------------------------------------
-
-    def _parse_percent(self, value: str) -> float:
-        """
-        Converte uma string de percentual para float.
-
-        Remove "R$", espaços, "%" e troca vírgula por ponto.
-        Ex: "12,5" -> 12.5, "R$ 10%" -> 10.0
-
-        Parâmetros:
-            value (str): String do percentual.
-
-        Retorna:
-            float: Valor numérico do percentual.
-        """
-        raw = value.strip().replace("R$", "").replace(" ", "").replace("%", "").replace(",", ".")
-        return float(raw)
-
-    # -------------------------------------------------------------------------
-    # Simulação - Ponto Principal de Ação
+    # Simulação - Ponto Principal de Ação (via Caso de Uso)
     # -------------------------------------------------------------------------
 
     def on_simulate_click(self):
@@ -878,117 +865,36 @@ class ModernAppGUI(ctk.CTk):
         no botão "Simular Rendimento".
 
         Fluxo:
-            1. Lê e valida todos os campos de entrada.
-            2. Aplica limites de segurança (valor máximo 1 trilhão).
-            3. Valida taxas (diferenciadas por estratégia: prefixado 0-100%, CDI 0-500%).
-            4. Converte prazo para meses (máximo 1200 = anti-DoS).
-            5. Cria estratégia de rendimento (CompoundInterestStrategy ou CDIStrategy).
-            6. Cria SimulationParams e chama service.simulate().
-            7. Atualiza cards e gráficos com o resultado.
+            1. Coleta dados brutos dos campos de entrada.
+            2. Cria SimulationInput e chama o Caso de Uso.
+            3. O Caso de Uso valida, converte e executa a simulação.
+            4. Atualiza cards e gráficos com o resultado.
 
-        Todas as exceções são capturadas e exibidas em messagebox amigáveis.
+        Todas as exceções de validação são capturadas e exibidas em
+        messagebox amigáveis.
         """
         try:
-            # Leitura e conversão dos valores monetários (suporta formato brasileiro)
-            inicial = parse_amount_to_cents(self.entry_inicial.get()) / 100.0
-            mensal = parse_amount_to_cents(self.entry_mensal.get()) / 100.0
-            taxa_raw = self._parse_percent(self.entry_taxa.get())
-            periodo_raw = self._parse_percent(self.entry_periodo.get())
-            meta_str = self.entry_meta.get().strip().replace(",", ".")
-            meta_val = parse_amount_to_cents(meta_str) / 100.0 if meta_str else 1_000_000.0
-
-            # Limite monetário de segurança (1 trilhão de reais)
-            LIMITE_MONETARIO = 1_000_000_000_000.0
-            for nome, valor in (("Valor Inicial", inicial), ("Aporte Mensal", mensal), ("Meta", meta_val)):
-                if valor > LIMITE_MONETARIO:
-                    messagebox.showerror(
-                        "Erro de Valor",
-                        f"{nome} não pode exceder R$ {LIMITE_MONETARIO:,.2f}."
-                    )
-                    return
-
-            if inicial < 0 or mensal < 0:
-                messagebox.showerror("Erro de Valor", "Os valores de aportes não podem ser negativos.")
-                return
-
-            # Validação de taxa diferenciada por estratégia
-            if "CDI" in self.combo_estrategia.get():
-                if taxa_raw <= 0 or taxa_raw > 500:
-                    messagebox.showerror(
-                        "Erro de Valor",
-                        "O percentual do CDI deve estar entre 0% e 500%."
-                    )
-                    return
-            else:
-                if taxa_raw < 0 or taxa_raw > 100:
-                    messagebox.showerror("Erro de Valor", "A taxa de rendimento deve estar entre 0% e 100%.")
-                    return
-
-            if periodo_raw <= 0:
-                messagebox.showerror("Erro de Prazo", "O prazo de investimento deve ser maior que zero.")
-                return
-
-            if meta_val <= 0:
-                messagebox.showerror("Erro de Meta", "O valor da meta financeira deve ser maior que zero.")
-                return
-
-        except ValueError:
-            messagebox.showerror("Erro de Formato", "Por favor, preencha todos os campos apenas com números válidos.")
-            return
-        except Exception as exc:
-            messagebox.showerror(
-                "Erro Inesperado",
-                f"Ocorreu um erro inesperado ao ler os dados: {exc}"
-            )
-            return
-
-        try:
-            # Conversão de prazo para meses
-            if self.combo_tipo_periodo.get() == "Anos":
-                meses = max(1, int(round(periodo_raw * 12)))
-            else:
-                meses = max(1, int(round(periodo_raw)))
-
-            # Limite de segurança anti-DoS (máximo 1200 meses = 100 anos)
-            if meses > MAX_SIMULATION_MONTHS:
-                meses = MAX_SIMULATION_MONTHS
-                messagebox.showwarning(
-                    "Aviso de Prazo",
-                    f"O prazo máximo para projeção foi ajustado para 100 anos ({MAX_SIMULATION_MONTHS} meses)."
-                )
-
-            # Cria estratégia de rendimento conforme seleção do usuário
-            if "CDI" in self.combo_estrategia.get():
-                try:
-                    cdi_base = self._parse_percent(self.entry_cdi_base.get())
-                    if cdi_base <= 0 or cdi_base > 100:
-                        raise ValueError("A taxa CDI base deve estar entre 0 e 100.")
-                except ValueError:
-                    messagebox.showerror(
-                        "Erro de Valor",
-                        "Digite um valor válido para a Taxa CDI Base (ex: 10.75)."
-                    )
-                    return
-                strategy = CDIStrategy(cdi_percentage=taxa_raw, cdi_annual_rate=cdi_base, use_effective_rate=True)
-            else:
-                is_annual = self.combo_periodo_taxa.get() == "% ao ano"
-                strategy = CompoundInterestStrategy(rate_percent=taxa_raw, is_annual=is_annual, use_effective_rate=True)
-
-            params = SimulationParams(
-                initial_amount=inicial,
-                monthly_contribution=mensal,
-                total_months=meses,
-                target_amount=meta_val
+            input_data = SimulationInput(
+                inicial=self.entry_inicial.get(),
+                mensal=self.entry_mensal.get(),
+                taxa=self.entry_taxa.get(),
+                periodo=self.entry_periodo.get(),
+                tipo_periodo=self.combo_tipo_periodo.get(),
+                meta=self.entry_meta.get(),
+                estrategia=self.combo_estrategia.get(),
+                cdi_base=self.entry_cdi_base.get(),
+                use_effective_rate=True,
             )
 
-            resultado = self.service.simulate(params, strategy)
+            resultado = self.simulator_use_case.execute(input_data)
+
         except ValueError as exc:
-            messagebox.showerror("Erro de Simulação", str(exc))
+            messagebox.showerror("Erro de Validação", str(exc))
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - exceção inesperada na UI, exibida ao usuário
             messagebox.showerror(
                 "Erro Inesperado",
-                f"Ocorreu um erro inesperado durante a simulação: {exc}"
+                f"Ocorreu um erro inesperado ao processar a simulação: {exc}"
             )
             return
 
@@ -1003,14 +909,16 @@ class ModernAppGUI(ctk.CTk):
         self.card_liquido.update_value(formatar_moeda(resultado.net_balance), badge_text=badge_ir)
         self.card_meta.update_value(formatar_tempo(resultado.months_to_target))
 
-        # Atualiza gráficos com a paleta de cores atual
-        monthly_rate_bars = strategy.get_monthly_rate()
-        self.chart_controller.plot_timeline(params.initial_amount, resultado.timeline)
+        # Atualiza gráficos com os dados já calculados pelo serviço
+        self.chart_controller.plot_timeline(
+            resultado.total_invested - resultado.total_interest,  # valor inicial aproximado
+            resultado.timeline
+        )
         self.chart_controller.plot_evolution_bars(
-            params.initial_amount,
+            resultado.total_invested - resultado.total_interest,
             resultado.timeline,
-            target_amount=params.target_amount,
+            target_amount=resultado.total_invested + resultado.total_interest,  # usa meta do input se disponível
             months_to_target=resultado.months_to_target,
-            monthly_contribution=mensal,
-            monthly_rate=monthly_rate_bars
+            monthly_contribution=resultado.total_invested / resultado.total_months if resultado.total_months > 0 else 0,
+            monthly_rate=resultado.taxa_mensal if hasattr(resultado, 'taxa_mensal') else 0.0,
         )

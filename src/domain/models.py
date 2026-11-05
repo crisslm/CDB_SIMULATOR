@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional
 
+from .constants import (
+    IR_FAIXA_1_DIAS,
+    IR_FAIXA_2_DIAS,
+    IR_FAIXA_3_DIAS,
+)
+
 
 def calcular_aliquota_ir(dias: int) -> float:
     """
@@ -52,11 +58,11 @@ def calcular_aliquota_ir(dias: int) -> float:
         Se a tabela de IR mudar no futuro, é aqui que deve ser alterado.
         Não esqueça de atualizar também os testes em tests/test_domain.py.
     """
-    if dias <= 180:
+    if dias <= IR_FAIXA_1_DIAS:
         return 0.225
-    elif dias <= 360:
+    elif dias <= IR_FAIXA_2_DIAS:
         return 0.20
-    elif dias <= 720:
+    elif dias <= IR_FAIXA_3_DIAS:
         return 0.175
     else:
         return 0.15

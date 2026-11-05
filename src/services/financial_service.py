@@ -30,155 +30,24 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional
 
-from src.domain.financial_models import FinancialCategory, FinancialSummary, FinancialTransaction, TransactionType
-from src.repositories.financial_repository import FinancialRepository
-
-
-# =============================================================================
-# Categorias Padrão
-# =============================================================================
-
-DEFAULT_CATEGORIES = (
-    # (nome, tipo, cor_hex)
-    # Receitas
-    ("Salário", TransactionType.INCOME, "#24C270"),
-    ("Freelance", TransactionType.INCOME, "#4F8CFF"),
-    ("Dividendos", TransactionType.INCOME, "#A970FF"),
-    ("Rendimentos", TransactionType.INCOME, "#32B8C6"),
-    ("Outros", TransactionType.INCOME, "#8E8E93"),
-    # Despesas
-    ("Alimentação", TransactionType.EXPENSE, "#FF9F43"),
-    ("Transporte", TransactionType.EXPENSE, "#4F8CFF"),
-    ("Moradia", TransactionType.EXPENSE, "#FF6B6B"),
-    ("Saúde", TransactionType.EXPENSE, "#A970FF"),
-    ("Educação", TransactionType.EXPENSE, "#32B8C6"),
-    ("Lazer", TransactionType.EXPENSE, "#F368E0"),
-    ("Assinaturas", TransactionType.EXPENSE, "#8395A7"),
-    ("Compras", TransactionType.EXPENSE, "#F9CA24"),
-    ("Contas", TransactionType.EXPENSE, "#576574"),
-    ("Outros", TransactionType.EXPENSE, "#8E8E93"),
-    # Investimentos
-    ("CDB", TransactionType.INVESTMENT, "#24C270"),
-    ("Tesouro Direto", TransactionType.INVESTMENT, "#4F8CFF"),
-    ("Ações", TransactionType.INVESTMENT, "#FF9F43"),
-    ("Fundos Imobiliários", TransactionType.INVESTMENT, "#A970FF"),
-    ("ETFs", TransactionType.INVESTMENT, "#32B8C6"),
-    ("Criptomoedas", TransactionType.INVESTMENT, "#F9CA24"),
-    ("Reserva de Emergência", TransactionType.INVESTMENT, "#6FE29F"),
-    ("Outros", TransactionType.INVESTMENT, "#8E8E93"),
+from ..domain.financial_models import FinancialCategory, FinancialSummary, FinancialTransaction, TransactionType
+from ..domain.financial_utils import (
+    DEFAULT_CATEGORIES,
+    allocation,
+    expense_by_category,
+    format_cents,
+    monthly_expenses,
+    parse_amount_to_cents,
+    parse_br_date,
+    period_range,
+    summary_for,
 )
-
-# Observação: Estas mesmas categorias são inseridas no banco pelo
-# FinancialRepository._initialize(). Elas são mantidas aqui para retrocompatibilidade
-# e uso pelo FinancialService.ensure_default_categories().
+from ..repositories.financial_repository import FinancialRepository
 
 
-# =============================================================================
-# Funções Utilitárias
-# =============================================================================
-
-def parse_amount_to_cents(value: str | int | Decimal) -> int:
-    """
-    Converte uma string de valor monetário no formato brasileiro para centavos (int).
-
-    Formatos aceitos:
-        - "1.250,50"  -> 125050
-        - "1250,50"   -> 125050
-        - "1.250"     -> 125000
-        - "R$ 1.250,50" -> 125050
-        - "1 250,50"  -> 125050
-
-    Regras de parsing:
-        1. Remove "R$", espaços.
-        2. Se tiver vírgula e ponto:
-           - Se vírgula for o último separador (formato BR): remove pontos, troca vírgula por ponto.
-           - Senão (formato EN): remove vírgulas.
-        3. Se tiver apenas vírgula: troca por ponto.
-        4. Se tiver múltiplos pontos: remove todos (formato milhar sem decimal).
-        5. Converte para Decimal com 2 casas, arredondamento ROUND_HALF_UP.
-        6. Multiplica por 100 e converte para int (centavos).
-
-    Parâmetros:
-        value: String, int ou Decimal representando um valor monetário.
-
-    Retorna:
-        int: Valor em centavos (ex: R$ 1,50 -> 150).
-
-    Levanta:
-        ValueError: Se o valor for inválido, vazio, ou menor/igual a zero.
-
-    Exemplo:
-        >>> parse_amount_to_cents("1.250,50")
-        125050
-        >>> parse_amount_to_cents("R$ 100")
-        10000
-    """
-    raw = str(value).strip().replace("R$", "").replace(" ", "")
-    if not raw:
-        raise ValueError("Informe um valor.")
-    if "," in raw and "." in raw:
-        if raw.rfind(",") > raw.rfind("."):
-            raw = raw.replace(".", "").replace(",", ".")
-        else:
-            raw = raw.replace(",", "")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
-    elif raw.count(".") > 1:
-        raw = raw.replace(".", "")
-    try:
-        amount = Decimal(raw).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError("Informe um valor monetário válido.") from exc
-    cents = int(amount * 100)
-    if cents <= 0:
-        raise ValueError("O valor deve ser maior que zero.")
-    return cents
-
-
-def format_cents(cents: int) -> str:
-    """
-    Formata um valor em centavos para string monetária brasileira.
-
-    Exemplo:
-        125050 -> "R$ 1.250,50"
-        500    -> "R$ 5,00"
-
-    Parâmetros:
-        cents (int): Valor em centavos.
-
-    Retorna:
-        str: String formatada no padrão "R$ 1.250,50".
-    """
-    return f"R$ {cents / 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def parse_br_date(value: str | date) -> date:
-    """
-    Converte uma string de data no formato brasileiro para objeto date.
-
-    Formatos aceitos:
-        - "03/11/2026" (DD/MM/AAAA)
-        - "2026-11-03" (ISO AAAA-MM-DD)
-
-    Parâmetros:
-        value: String de data ou objeto date (retornado como está).
-
-    Retorna:
-        date: Objeto date correspondente.
-
-    Levanta:
-        ValueError: Se a data for inválida ou estiver em formato não reconhecido.
-    """
-    if isinstance(value, date):
-        return value
-    normalized = (value or "").strip()
-    try:
-        if "/" in normalized:
-            day, month, year = (int(part) for part in normalized.split("/"))
-            return date(year, month, day)
-        return date.fromisoformat(normalized)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Informe uma data válida no formato DD/MM/AAAA.") from exc
+# Observação: DEFAULT_CATEGORIES é importado de financial_utils para
+# evitar duplicação. Elas são inseridas no banco pelo
+# FinancialRepository._initialize() e mantidas aqui para retrocompatibilidade.
 
 
 # =============================================================================
@@ -230,7 +99,7 @@ class FinancialService:
             self.repository.add_category(FinancialCategory(name, kind, color))
 
     # -------------------------------------------------------------------------
-    # Períodos de Filtro
+    # Períodos de Filtro (delegado para financial_utils)
     # -------------------------------------------------------------------------
 
     @staticmethod
@@ -239,57 +108,9 @@ class FinancialService:
         """
         Converte uma string de período em intervalo de datas (start, end).
 
-        Períodos suportados:
-            - "Todo o período": Retorna (None, None) - sem filtro de data.
-            - "Mês atual": Do dia 1 do mês atual até hoje.
-            - "Mês anterior": Do dia 1 até o último dia do mês anterior.
-            - "Últimos 3 meses": Do dia 1 do mês (atual - 2) até hoje.
-            - "Últimos 6 meses": Idem, 6 meses.
-            - "Últimos 12 meses": Idem, 12 meses.
-            - "Período personalizado": Usa custom_start e custom_end.
-
-        Parâmetros:
-            period: String identificando o período.
-            reference: Data de referência (padrão: hoje).
-            custom_start: Data inicial para período personalizado.
-            custom_end: Data final para período personalizado.
-
-        Retorna:
-            tuple[date | None, date | None]: (data_inicial, data_final).
-
-        Levanta:
-            ValueError: Se o período for inválido ou personalizado sem datas válidas.
+        Delegado para ``src.domain.financial_utils.period_range``.
         """
-        today = reference or date.today()
-        period = (period or "Mês atual").strip()
-
-        def month_start(year: int, month: int) -> date:
-            return date(year, month, 1)
-
-        if period == "Todo o período":
-            return None, None
-        if period == "Período personalizado":
-            if not custom_start or not custom_end or custom_start > custom_end:
-                raise ValueError("Informe um período personalizado válido.")
-            return custom_start, custom_end
-        months = {
-            "Mês atual": 1,
-            "Mês anterior": 1,
-            "Últimos 3 meses": 3,
-            "Últimos 6 meses": 6,
-            "Últimos 12 meses": 12,
-        }.get(period)
-        if months is None:
-            raise ValueError("Período inválido.")
-        end_anchor = month_start(today.year, today.month)
-        if period == "Mês anterior":
-            end = end_anchor - timedelta(days=1)
-            return month_start(end.year, end.month), end
-        start_year, start_month = today.year, today.month - months + 1
-        while start_month <= 0:
-            start_year -= 1
-            start_month += 12
-        return month_start(start_year, start_month), today
+        return period_range(period, reference, custom_start, custom_end)
 
     # -------------------------------------------------------------------------
     # Categorias
@@ -482,10 +303,7 @@ class FinancialService:
         Retorna:
             FinancialSummary: Totais de receitas, despesas e investimentos.
         """
-        totals = defaultdict(int)
-        for item in transactions:
-            totals[item.transaction_type] += item.amount_cents
-        return FinancialSummary(totals[TransactionType.INCOME], totals[TransactionType.EXPENSE], totals[TransactionType.INVESTMENT])
+        return summary_for(transactions)
 
     def summary(self, **filters) -> FinancialSummary:
         """
@@ -515,11 +333,7 @@ class FinancialService:
         Retorna:
             list[tuple[str, int, str]]: (nome, total_centavos, cor).
         """
-        totals: dict[tuple[str, str], int] = defaultdict(int)
-        for item in transactions:
-            if item.transaction_type == TransactionType.EXPENSE:
-                totals[(item.category_name, item.category_color or "#8E8E93")] += item.amount_cents
-        return [(name, amount, color) for (name, color), amount in sorted(totals.items(), key=lambda item: item[1], reverse=True)]
+        return expense_by_category(transactions)
 
     @staticmethod
     def allocation(transactions: list[FinancialTransaction]) -> list[tuple[str, int, str]]:
@@ -534,11 +348,7 @@ class FinancialService:
         Retorna:
             list[tuple[str, int, str]]: Alocação incluindo categoria "Investimentos".
         """
-        result = FinancialService.expense_by_category(transactions)
-        invested = sum(item.amount_cents for item in transactions if item.transaction_type == TransactionType.INVESTMENT)
-        if invested:
-            result.append(("Investimentos", invested, "#24C270"))
-        return result
+        return allocation(transactions)
 
     @staticmethod
     def monthly_expenses(transactions: list[FinancialTransaction]) -> list[tuple[str, int]]:
@@ -553,11 +363,7 @@ class FinancialService:
         Retorna:
             list[tuple[str, int]]: ("AAAA-MM", total_centavos).
         """
-        totals: dict[str, int] = defaultdict(int)
-        for item in transactions:
-            if item.transaction_type == TransactionType.EXPENSE:
-                totals[item.occurred_on.strftime("%Y-%m")] += item.amount_cents
-        return sorted(totals.items())
+        return monthly_expenses(transactions)
 
     # -------------------------------------------------------------------------
     # Versões SQL (mais eficientes - consultam diretamente o banco)
@@ -600,7 +406,7 @@ class FinancialService:
             reference: Data de referência.
 
         Retorna:
-            list[tuple[str, int, str]]: (nome_categoria, total_centavos, cor).
+            list[tuple[str, int, str]]: (nome_categoria, total_centavos, cor_hex).
         """
         start, end = self.period_range(period, reference, custom_start, custom_end)
         return self.repository.expense_by_category_sql(start, end, category_id)
@@ -627,6 +433,7 @@ class FinancialService:
         start, end = self.period_range(period, reference, custom_start, custom_end)
         invested = self.repository.summary_sql(start, end, TransactionType.INVESTMENT, category_id).investment_cents
         if invested:
+            result = list(result)
             result.append(("Investimentos", invested, "#24C270"))
         return result
 

@@ -29,7 +29,7 @@ from colorsys import rgb_to_hsv, hsv_to_rgb
 from decimal import Decimal
 import locale
 
-from src.ui.gui.theme import PALETTES, THEME_MODES
+from .theme import PALETTES, THEME_MODES
 
 # Tenta definir locale brasileiro para formatação monetária eficiente.
 # Se falhar (ex: locale não instalado no sistema), mantém fallback com replace().

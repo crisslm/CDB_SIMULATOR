@@ -25,8 +25,8 @@ from decimal import Decimal, ROUND_HALF_UP
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
-from src.domain.models import MonthlyRecord
-from src.ui.gui.theme import PALETTES  # módulo independente para evitar ciclo de importação
+from ...domain.models import MonthlyRecord
+from .theme import PALETTES  # módulo independente para evitar ciclo de importação
 
 
 class InvestmentChart:

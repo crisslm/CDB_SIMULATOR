@@ -1,9 +1,9 @@
 ================================================================================
                           DOCUMENTO TECNICO
-                     CDB Simulator - Aplicacao Desktop
+                      CDB Simulator - Aplicacao Desktop
 ================================================================================
 
-Versao: 1.0.0
+Versao: 1.1.0
 Data: Novembro de 2026
 Linguagem: Python 3.13+
 Interface: CustomTkinter
@@ -30,6 +30,7 @@ Funcionalidades Principais:
 - Animacoes dinamicas em botoes e cards
 - Backup e restauracao de dados financeiros
 - Empacotamento como executavel unico (.exe) via PyInstaller
+- Camada de Casos de Uso (Use Cases) para orquestracao de regras de negocio
 
 ================================================================================
 2. ARQUITETURA DO SISTEMA
@@ -40,6 +41,9 @@ O projeto adota uma Clean Architecture com separacao em camadas:
   Camada de Apresentacao (UI)
   main_gui.py -> src/ui/gui/
         ↓ (usa)
+  Camada de Casos de Uso (Use Cases)  <-- NOVA CAMADA
+  src/use_cases/
+        ↓ (orquestra)
   Camada de Servicos
   src/services/
         ↓ (injeta / consome)
@@ -56,7 +60,7 @@ Princípios SOLID Aplicados:
 | OCP | YieldStrategy e abstrata; novas estrategias de investimento podem ser criadas sem modificar codigo existente |
 | LSP | CompoundInterestStrategy e CDIStrategy sao intercambiaveis |
 | ISP | Contrato YieldStrategy e enxuto (get_monthly_rate(), get_description()) |
-| DIP | Servicos dependem de abstracao (YieldStrategy), nao de classes concretas |
+| DIP | Servicos e casos de uso dependem de abstracao (YieldStrategy, FinancialRepositoryProtocol), nao de classes concretas |
 
 ================================================================================
 3. CAMADAS DO SISTEMA
@@ -83,7 +87,37 @@ financial_models.py:
 - FinancialTransaction: Transacao com validacao de valor (>0 centavos), categoria, data e notas (max 1000 chars)
 - FinancialSummary: Resumo com totais por tipo e calculo de taxa de investimento
 
-3.2 Camada de Servicos (src/services/)
+constants.py:  <-- NOVO
+- Constantes centralizadas de negocio e seguranca (single source of truth)
+- MAX_SIMULATION_MONTHS, MAX_SIMULATION_BALANCE, ZERO_TOLERANCE
+- LIMITE_MONETARIO, limites de taxa (TAXA_JUROS_MAX, CDI_PERCENTUAL_MAX, CDI_BASE_MAX)
+- Faixas de IR por dias, nomes de arquivos de tema e banco
+
+financial_utils.py:  <-- NOVO
+- Utilitarios financeiros puros (sem dependencia de UI ou repositorio)
+- parse_amount_to_cents, format_cents, parse_br_date
+- period_range, summary_for, expense_by_category, allocation, monthly_expenses
+- DEFAULT_CATEGORIES
+
+3.2 Camada de Casos de Uso (src/use_cases/)  <-- NOVA CAMADA
+Orquestram a execucao de regras de negocio entre a Interface (UI)
+e as camadas de Servico / Dominio / Repositorio.
+
+simulate_investment.py:
+- SimulateInvestmentUseCase: Caso de uso para simulacao de investimento
+- SimulationInput: DTO de entrada com dados brutos da UI
+- SimulationOutput: DTO de saida pronto para exibicao na UI
+- Orquestra: conversao de valores, validacao de limites, criacao de estrategia,
+  chamada ao serviço e retorno de resultado
+
+financial_use_cases.py:
+- FinancialUseCases: Caso de uso para controle financeiro
+- CRUD de categorias e transacoes
+- Consultas agregadas (resumo, alocacao, despesas por categoria, mensais)
+
+__init__.py: Exporta SimulateInvestmentUseCase e FinancialUseCases
+
+3.3 Camada de Servicos (src/services/)
 
 simulator_service.py:
 - InvestmentSimulatorService.simulate(): Executa evolucao patrimonial mes a mes usando Decimal para precisao monetaria
@@ -93,25 +127,28 @@ simulator_service.py:
 
 financial_service.py:
 - FinancialService: Gerencia categorias, transacoes, resumos, filtros por periodo e agregacoes
-- parse_amount_to_cents(): Converte valores monetarios brasileiros (R$ 1.250,50) para centavos inteiros
-- parse_br_date(): Converte datas no formato DD/MM/AAAA ou ISO
-- ensure_default_categories(): Insere categorias padrao se o banco estiver vazio
+- Delegacao para financial_utils para metodos estaticos de parsing e agregacao
 
-3.3 Camada de Repositorios (src/repositories/)
+3.4 Camada de Repositorios (src/repositories/)
 
 financial_repository.py:
 - FinancialRepository: Gerencia persistencia SQLite com criptografia opcional
+- Implementa FinancialRepositoryProtocol (interface abstrata)
 - Tabelas: categories, transactions, audit_log, schema_metadata
 - Criptografia: Banco armazenado como .enc (criptografado), descriptografado para arquivo temporario durante execucao, recriptografado ao encerrar
 - Auditoria: Registra INSERT, UPDATE e DELETE de transacoes com timestamps
 - CategoryInUseError: Impede exclusao de categoria com lancamentos associados
+
+interfaces.py:  <-- NOVO
+- FinancialRepositoryProtocol: Protocolo (interface abstrata) para repositorios
+- Permite injecao de dependencia, mock em testes e troca de banco sem alterar servicos
 
 db_encryption.py:
 - DatabaseEncryption: Gerencia criptografia Fernet (AES-128 CBC + HMAC-SHA256)
 - Chave pode vir de variavel de ambiente CDB_DB_ENCRYPTION_KEY ou arquivo .db_key
 - Prioridade: variavel de ambiente > arquivo existente > gerar nova
 
-3.4 Camada de Apresentacao (src/ui/)
+3.5 Camada de Apresentacao (src/ui/)
 
 gui/app.py:
 - ModernAppGUI: Janela principal responsiva (CustomTkinter)
@@ -119,6 +156,8 @@ gui/app.py:
 - Persistencia de tema claro/escuro em ~/.cdb_simulator_theme.json
 - Validacao de entradas com mensagens de erro amigaveis
 - Tratamento generico de excecoes
+- Usa casos de uso (SimulateInvestmentUseCase, FinancialUseCases) para logica de negocio
+- Imports relativos (eliminado acoplamento a 'src.')
 
 gui/components.py:
 - MetricCard: Cards de metrica com animacao de hover (cor de fundo e borda)
@@ -141,8 +180,34 @@ gui/financial/dashboard.py:
 - FinancialCharts: Graficos de donut e barras para alocacao de despesas
 - Backup e restauracao de banco criptografado
 
+gui/financial/financial_charts.py:
+- Graficos reutilizaveis do dashboard financeiro (donut e barras)
+
 ================================================================================
-4. DECISOES TECNICAS
+4. CAMADA DE CONFIGURACAO (src/config.py)  <-- NOVO
+================================================================================
+
+Carrega variaveis de ambiente do arquivo .env (se existir) e expõe
+configuracoes tipadas para toda a aplicacao.
+
+Biblioteca utilizada: python-dotenv (já listada em requirements.txt).
+
+Exemplo de arquivo .env:
+
+    CDB_DB_ENCRYPTION_KEY=sua_chave_fernet_aqui
+    CDB_APP_THEME=Light
+    CDB_MAX_SIMULATION_MONTHS=1200
+    CDB_LIMITE_MONETARIO=1000000000000.0
+
+Configuracoes expostas:
+- APP_NAME, APP_VERSION
+- THEME_DEFAULT, THEME_FILE_NAME
+- DB_DIR_NAME, DB_FILE_NAME, DB_KEY_FILE_NAME, DB_ENCRYPTION_KEY
+- MAX_SIMULATION_MONTHS, MAX_SIMULATION_BALANCE
+- LIMITE_MONETARIO, TAXA_JUROS_MAX, CDI_PERCENTUAL_MAX, CDI_BASE_MAX
+
+================================================================================
+5. DECISOES TECNICAS
 ================================================================================
 
 4.1 Por que Decimal para calculos monetarios?
@@ -166,8 +231,21 @@ permite trocar a interface (ex: web, mobile) sem alterar regras de negocio.
 Gera um unico .exe facil de distribuir, sem exigir Python instalado no computador
 do usuario final.
 
+4.6 Por que camada de Casos de Uso?
+Separa a logica de negocio da interface grafica. A UI apenas coleta dados e chama
+casos de uso, ficando responsavel apenas por apresentacao. Isso melhora a
+testabilidade e permite reutilizar a mesma logica em outras interfaces (CLI, API, etc.).
+
+4.7 Por que imports relativos?
+Eliminou o acoplamento ao nome do pacote 'src.', tornando o codigo mais portavel
+e facil de manter se o projeto for movido ou instalado como pacote.
+
+4.8 Por que interface abstrata (Protocol) para repositorio?
+Permite injecao de dependencia, mock em testes e futura troca de banco de dados
+(ex: PostgreSQL) sem alterar a camada de servicos.
+
 ================================================================================
-5. COMO CADA COMPONENTE FUNCIONA
+6. COMO CADA COMPONENTE FUNCIONA
 ================================================================================
 
 5.1 Simulacao de Juros Compostos
@@ -183,8 +261,12 @@ Taxa mensal:
   - Se mensal: i_mes / 100
 
 Imposto de Renda:
-  - Baseado em dias (meses * 30)
+  - Baseado em dias (meses * 30, ou dias reais se start_date/end_date fornecidos)
   - Aplicado sobre juros brutos no final
+
+Fluxo via Caso de Uso:
+  UI coleta dados -> SimulationInput -> SimulateInvestmentUseCase.execute()
+  -> validacao -> servico.simulate() -> SimulationOutput -> UI exibe
 
 5.2 Calculo de Meta (O(1))
 
@@ -212,7 +294,7 @@ Execucao:
 - Eventos: <Enter>, <Leave>, <ButtonPress-1>, <ButtonRelease-1>
 
 ================================================================================
-6. SEGURANCA
+7. SEGURANCA
 ================================================================================
 
 | Medida | Implementacao |
@@ -225,9 +307,10 @@ Execucao:
 | Validacao de entrada | Todos os campos validados antes de processar |
 | Limite de periodo | Maximo 1200 meses (anti-DoS) |
 | Limite de taxa | 0-100% para juros, 0-500% para CDI |
+| Limite monetario | 1 trihao de reais para campos de entrada |
 
 ================================================================================
-7. BUILD E DISTRIBUICAO
+8. BUILD E DISTRIBUICAO
 ================================================================================
 
 7.1 Gerar o executavel
@@ -267,7 +350,7 @@ O instalador cria:
 ```
 
 ================================================================================
-8. COMO EXECUTAR E TESTAR
+9. COMO EXECUTAR E TESTAR
 ================================================================================
 
 Modo Desenvolvimento:
@@ -286,7 +369,7 @@ project run    # Roda testes primeiro, depois abre a GUI
 ```
 
 ================================================================================
-9. ESTRUTURA DE DIRETORIOS
+10. ESTRUTURA DE DIRETORIOS
 ================================================================================
 
 CDB Simulator/
@@ -301,81 +384,99 @@ CDB Simulator/
 ├── .env.example             # Template de variaveis de ambiente
 ├── .gitignore               # Protege .env, .db_key, dist/, build/
 ├── README.md                # Documentacao usuario
+├── DOCUMENTACAO_TECNICA.txt # Este documento
 ├── dist/                    # .exe gerado (nao versionado)
 │   └── CDB_Simulator.exe
 ├── installer/               # Instalador gerado (nao versionado)
 │   └── CDB_Simulator_Setup_1.0.0.exe
 ├── src/
 │   ├── __init__.py
+│   ├── config.py            # Configuracao via .env (NOVO)
 │   ├── domain/
 │   │   ├── __init__.py
+│   │   ├── constants.py     # Constantes centralizadas (NOVO)
+│   │   ├── financial_models.py  # Entidades financeiras
+│   │   ├── financial_utils.py   # Utilitarios financeiros puros (NOVO)
 │   │   ├── models.py        # Dataclasses, calculo IR
-│   │   ├── strategies.py    # Estrategias de rendimento
-│   │   └── financial_models.py  # Entidades financeiras
+│   │   └── strategies.py    # Estrategias de rendimento
 │   ├── services/
 │   │   ├── __init__.py
-│   │   ├── simulator_service.py  # Motor de simulacao
-│   │   └── financial_service.py  # Controle financeiro
+│   │   ├── financial_service.py  # Controle financeiro
+│   │   └── simulator_service.py  # Motor de simulacao
 │   ├── repositories/
 │   │   ├── __init__.py
 │   │   ├── financial_repository.py  # SQLite criptografado
-│   │   └── db_encryption.py   # Criptografia Fernet
-│   └── ui/
+│   │   ├── db_encryption.py   # Criptografia Fernet
+│   │   └── interfaces.py    # Protocolo de repositorio (NOVO)
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   └── gui/
+│   │       ├── __init__.py
+│   │       ├── app.py         # Janela principal
+│   │       ├── chart.py       # Graficos Matplotlib
+│   │       ├── components.py  # Cards e botoes com animacoes
+│   │       ├── theme.py       # Paletas de cores
+│   │       └── financial/
+│   │           ├── __init__.py
+│   │           ├── dashboard.py  # Controle Financeiro
+│   │           └── financial_charts.py  # Graficos financeiros
+│   └── use_cases/           # Camada de Casos de Uso (NOVO)
 │       ├── __init__.py
-│       ├── gui/
-│       │   ├── __init__.py
-│       │   ├── app.py         # Janela principal
-│       │   ├── theme.py       # Paletas de cores
-│       │   ├── components.py  # Cards e botoes com animacoes
-│       │   ├── chart.py       # Graficos Matplotlib
-│       │   └── financial/
-│       │       ├── __init__.py
-│       │       ├── dashboard.py  # Controle Financeiro
-│       │       └── financial_charts.py  # Graficos financeiros
+│       ├── financial_use_cases.py  # Casos de uso financeiro
+│       └── simulate_investment.py  # Caso de uso de simulacao
 └── tests/
     ├── test_domain.py
     ├── test_financial.py
+    ├── test_security_and_validations.py
     ├── test_services.py
-    └── test_security_and_validations.py
+    └── test_use_cases.py    # Testes de casos de uso (NOVO)
 
 ================================================================================
-10. VARIAVEIS DE AMBIENTE
+11. VARIAVEIS DE AMBIENTE
 ================================================================================
 
 | Variavel | Descricao | Exemplo |
 |----------|-----------|---------|
 | CDB_DB_ENCRYPTION_KEY | Chave Fernet para criptografia do banco | base64-encoded-key |
+| CDB_APP_THEME | Tema padrao (Light/Dark) | Light |
+| CDB_MAX_SIMULATION_MONTHS | Limite maximo de meses para simulacao | 1200 |
+| CDB_LIMITE_MONETARIO | Limite monetario de seguranca | 1000000000000.0 |
+| CDB_TAXA_JUROS_MAX | Limite superior para taxa de juros (%) | 100.0 |
+| CDB_CDI_PERCENTUAL_MAX | Limite superior para % do CDI | 500.0 |
+| CDB_CDI_BASE_MAX | Limite superior para taxa base CDI | 100.0 |
 
 Crie um arquivo .env na raiz copiando .env.example e preencha com sua chave.
 
 ================================================================================
-11. FLUXO DE DADOS (Simulacao)
+12. FLUXO DE DADOS (Simulacao)
 ================================================================================
 
-Usuario insere parametros na GUI
-        ↓
-Validacao de entradas (valores, taxas, prazos)
-        ↓
-Criacao de SimulationParams + YieldStrategy
-        ↓
-InvestmentSimulatorService.simulate()
-        ↓
-Loop mes a mes com Decimal (precisao monetaria)
-        ↓
-Calculo de IR regressivo (dias * 30)
-        ↓
-SimulationResult com bruto, liquido, timeline
-        ↓
-Atualizacao da GUI (cards, graficos)
+1. Usuario insere parametros na GUI
+   ↓
+2. GUI coleta dados brutos (SimulationInput)
+   ↓
+3. SimulateInvestmentUseCase.execute() valida e processa
+   ↓
+4. InvestmentSimulatorService.simulate() executa calculos
+   ↓
+5. Retorna SimulationOutput pronto para exibicao
+   ↓
+6. GUI atualiza cards e graficos com o resultado
 
 ================================================================================
-12. CONSIDERACOES DE MANUTENCAO
+13. CONSIDERACOES DE MANUTENCAO
 ================================================================================
 
 Para adicionar nova estrategia de investimento:
-1. Criar classe herdando YieldStrategy
+1. Criar classe herdando YieldStrategy em src/domain/strategies.py
 2. Implementar get_monthly_rate() e get_description()
 3. Registrar na GUI se necessario
+
+Para adicionar novo caso de uso:
+1. Criar modulo em src/use_cases/
+2. Implementar classe com DTOs de entrada e saida
+3. Exportar em src/use_cases/__init__.py
+4. Injetar na UI via construtor de ModernAppGUI
 
 Para adicionar nova animacao:
 1. Seguir padrao de _on_enter, _on_leave, _animate_*
@@ -385,14 +486,19 @@ Para adicionar nova animacao:
 Para alterar regras de IR:
 1. Modificar calcular_aliquota_ir() em src/domain/models.py
 2. Atualizar testes em tests/test_domain.py
-3. Atualizar documentacao se necessario
+3. Atualizacoes de documentacao se necessario
+
+Para alterar constantes de negocio:
+1. Editar src/domain/constants.py (single source of truth)
+2. Nenhuma outra mudanca necessaria (constantes sao importadas)
 
 ================================================================================
-13. VERSAO E CHANGELOG
+14. VERSAO E CHANGELOG
 ================================================================================
 
 | Versao | Data | Mudancas Principais |
 |--------|------|---------------------|
+| 1.1.0 | 2026 | Nova camada de Casos de Uso, constantes centralizadas, utilitarios financeiros separados, interface abstrata Protocol para repositorio, configuracao via .env, imports relativos, novos testes de casos de uso |
 | 1.0.0 | 2026 | Lancamento inicial desktop com criptografia, animacoes, backup/restore |
 
 ================================================================================

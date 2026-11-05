@@ -35,10 +35,10 @@ from typing import Optional
 
 import customtkinter as ctk
 
-from src.domain.financial_models import FinancialTransaction, TransactionType
-from src.services.financial_service import FinancialService, format_cents, parse_br_date
-from src.ui.gui.components import MetricCard, PillButton
-from src.ui.gui.financial.financial_charts import FinancialCharts
+from ....domain.financial_models import FinancialTransaction, TransactionType
+from ....services.financial_service import FinancialService, format_cents, parse_br_date
+from ..components import MetricCard, PillButton
+from .financial_charts import FinancialCharts
 
 
 # Mapeamento de labels amigáveis para TransactionType

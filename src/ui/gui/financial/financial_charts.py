@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
 
-from src.services.financial_service import format_cents
+from ....services.financial_service import format_cents
 
 
 class FinancialCharts:

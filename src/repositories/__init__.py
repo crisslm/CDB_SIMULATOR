@@ -1,5 +1,7 @@
-"""Adaptadores de persistência da aplicação."""
+"""
+Adaptadores de persistência da aplicação.
+"""
 
-from src.repositories.financial_repository import FinancialRepository
+from .financial_repository import FinancialRepository
 
 __all__ = ["FinancialRepository"]
