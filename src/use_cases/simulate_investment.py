@@ -176,13 +176,14 @@ class SimulateInvestmentUseCase:
                 use_effective_rate=input_data.use_effective_rate,
             )
         else:
-            is_annual = input_data.tipo_periodo == "% ao ano" or input_data.tipo_periodo == "Anos"
-            # Para taxa prefixada, o combo de período da taxa é "% ao ano" / "% ao mês"
-            # mas o tipo_periodo é "Anos" / "Meses". Ajustamos is_annual conforme o
-            # campo de período da taxa, que vem no tipo_periodo quando prefixado.
-            # Na UI, tipo_periodo é "Anos"/"Meses" para o prazo, e há combo separado
-            # para taxa. Aqui tratamos de forma defensiva.
-            is_annual = input_data.tipo_periodo == "Anos"
+            # Para taxa prefixada, is_annual depende do combo de período da taxa
+            # "% ao ano" / "% ao mês", NÃO do tipo_periodo (que é "Anos"/"Meses" do prazo)
+            # Na UI: combo_periodo_taxa = "% ao ano" / "% ao mês"
+            # tipo_periodo = "Anos" / "Meses" (apenas para o prazo do investimento)
+            is_annual = input_data.tipo_periodo == "% ao ano"
+            # Se tipo_periodo não for "% ao ano" nem "% ao mês", usar "Anos"/"Meses" como fallback
+            if input_data.tipo_periodo not in ("% ao ano", "% ao mês"):
+                is_annual = input_data.tipo_periodo == "Anos"
             strategy = CompoundInterestStrategy(
                 rate_percent=taxa_raw,
                 is_annual=is_annual,

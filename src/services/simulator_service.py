@@ -156,7 +156,8 @@ class InvestmentSimulatorService:
         total_interest = max(Decimal("0.0"), current_balance - total_invested)
 
         # Calcula tempo até atingir a meta (análise O(1) com fallback iterativo)
-        months_to_target = self.calculate_months_to_target(params, strategy)
+        # Usa max_months muito alto para não limitar o cálculo da meta pelo prazo de simulação
+        months_to_target = self.calculate_months_to_target(params, strategy, max_months=10000)
 
         # =====================================================================
         # Cálculo do Imposto de Renda regressivo (CDB / Renda Fixa)

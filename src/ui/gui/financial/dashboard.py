@@ -48,42 +48,50 @@ from .financial_charts import FinancialCharts
 
 
 # Mapeamento de labels amigáveis para TransactionType (traduzido dinamicamente)
-TYPE_LABELS = {
-    t("financial.transaction.type.income"): TransactionType.INCOME,
-    t("financial.transaction.type.expense"): TransactionType.EXPENSE,
-    t("financial.transaction.type.investment"): TransactionType.INVESTMENT,
-}
+def _get_type_labels():
+    """Retorna mapeamento de labels traduzidos dinamicamente."""
+    return {
+        t("financial.transaction.type.income"): TransactionType.INCOME,
+        t("financial.transaction.type.expense"): TransactionType.EXPENSE,
+        t("financial.transaction.type.investment"): TransactionType.INVESTMENT,
+    }
 
 # Mapeamento reverso (valor do enum -> label amigável)
-TYPE_BY_VALUE = {item.value: label for label, item in TYPE_LABELS.items()}
+def _get_type_by_value():
+    """Retorna mapeamento reverso traduzido dinamicamente."""
+    return {item.value: label for label, item in _get_type_labels().items()}
 
 # Períodos disponíveis para filtro no dashboard (traduzidos dinamicamente)
-PERIODS = [
-    t("financial.filter.period.current_month"),
-    t("financial.filter.period.previous_month"),
-    t("financial.filter.period.last_3_months"),
-    t("financial.filter.period.last_6_months"),
-    t("financial.filter.period.last_12_months"),
-    t("financial.filter.period.all"),
-    t("financial.filter.period.custom"),
-]
+def _get_periods():
+    """Retorna lista de períodos traduzidos dinamicamente."""
+    return [
+        t("financial.filter.period.current_month"),
+        t("financial.filter.period.previous_month"),
+        t("financial.filter.period.last_3_months"),
+        t("financial.filter.period.last_6_months"),
+        t("financial.filter.period.last_12_months"),
+        t("financial.filter.period.all"),
+        t("financial.filter.period.custom"),
+    ]
 
 # Cores pré-definidas para categorias (nome amigável -> código hex)
 # Usadas no diálogo de categorias para seleção rápida de cor
-CATEGORY_COLORS = [
-    (t("financial.category.color.green"), "#24C270"),
-    (t("financial.category.color.blue"), "#4F8CFF"),
-    (t("financial.category.color.orange"), "#FF9F43"),
-    (t("financial.category.color.red"), "#FF6B6B"),
-    (t("financial.category.color.purple"), "#A970FF"),
-    (t("financial.category.color.cyan"), "#32B8C6"),
-    (t("financial.category.color.pink"), "#F368E0"),
-    (t("financial.category.color.gray"), "#8395A7"),
-    (t("financial.category.color.yellow"), "#F9CA24"),
-    (t("financial.category.color.dark_blue"), "#1C1C1E"),
-    (t("financial.category.color.dark_green"), "#107C41"),
-    (t("financial.category.color.dark_orange"), "#D9534F"),
-]
+def _get_category_colors():
+    """Retorna lista de cores com nomes traduzidos dinamicamente."""
+    return [
+        (t("financial.category.color.green"), "#24C270"),
+        (t("financial.category.color.blue"), "#4F8CFF"),
+        (t("financial.category.color.orange"), "#FF9F43"),
+        (t("financial.category.color.red"), "#FF6B6B"),
+        (t("financial.category.color.purple"), "#A970FF"),
+        (t("financial.category.color.cyan"), "#32B8C6"),
+        (t("financial.category.color.pink"), "#F368E0"),
+        (t("financial.category.color.gray"), "#8395A7"),
+        (t("financial.category.color.yellow"), "#F9CA24"),
+        (t("financial.category.color.dark_blue"), "#1C1C1E"),
+        (t("financial.category.color.dark_green"), "#107C41"),
+        (t("financial.category.color.dark_orange"), "#D9534F"),
+    ]
 
 
 # =============================================================================
@@ -196,21 +204,21 @@ class CategoryDialog(ctk.CTkToplevel):
 
         self.name_entry = self._input(form, t("financial.dialog.name_placeholder"))
         self.type_combo = ctk.CTkComboBox(
-            form, values=list(TYPE_LABELS), height=36, corner_radius=10,
+            form, values=list(_get_type_labels()), height=36, corner_radius=10,
             command=lambda _: None
         )
         self.color_combo = ctk.CTkComboBox(
-            form, values=[name for name, _ in CATEGORY_COLORS],
+            form, values=[name for name, _ in _get_category_colors()],
             height=36, corner_radius=10, command=lambda _: None
         )
-        self.color_combo.set(CATEGORY_COLORS[0][0])
+        self.color_combo.set(_get_category_colors()[0][0])
 
         self.name_entry.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         self.type_combo.grid(row=0, column=1, padx=5, pady=12)
         self.color_combo.grid(row=0, column=2, padx=5, pady=12)
         form.grid_columnconfigure(0, weight=1)
 
-        self.type_combo.set(list(TYPE_LABELS)[1] if len(TYPE_LABELS) > 1 else list(TYPE_LABELS)[0])
+        self.type_combo.set(list(_get_type_labels())[1] if len(TYPE_LABELS) > 1 else list(_get_type_labels())[0])
 
         self.save_button = PillButton(
             form, text=t("financial.dialog.add"), command=self._save,
@@ -344,12 +352,12 @@ class CategoryDialog(ctk.CTkToplevel):
         self.type_combo.set(category.transaction_type.label)
 
         # Seleciona a cor correspondente no combobox de cores
-        for name, hex_color in CATEGORY_COLORS:
+        for name, hex_color in _get_category_colors():
             if hex_color == category.color:
                 self.color_combo.set(name)
                 break
 
-        self.save_button.configure(text="Salvar")
+        self.save_button.configure(text=t("financial.dialog.save"))
         self._render_list()
 
     def _save(self):
@@ -366,28 +374,28 @@ class CategoryDialog(ctk.CTkToplevel):
             # Mapeia o nome da cor selecionada de volta para o código hex
             selected_color_name = self.color_combo.get()
             selected_color_hex = next(
-                (hex_color for name, hex_color in CATEGORY_COLORS if name == selected_color_name),
-                CATEGORY_COLORS[0][1]
+                (hex_color for name, hex_color in _get_category_colors() if name == selected_color_name),
+                _get_category_colors()[0][1]
             )
 
             if self.edit_id:
                 self.service.update_category(
                     self.edit_id,
                     self.name_entry.get(),
-                    TYPE_LABELS[self.type_combo.get()],
+                    _get_type_labels()[self.type_combo.get()],
                     selected_color_hex
                 )
             else:
                 self.service.create_category(
                     self.name_entry.get(),
-                    TYPE_LABELS[self.type_combo.get()],
+                    _get_type_labels()[self.type_combo.get()],
                     selected_color_hex
                 )
 
             # Limpa formulário e re-renderiza
             self.edit_id = None
             self.name_entry.delete(0, "end")
-            self.color_combo.set(CATEGORY_COLORS[0][0])
+            self.color_combo.set(_get_category_colors()[0][0])
             self.save_button.configure(text=t("financial.dialog.add"))
             self._render_list()
             self.dashboard.refresh()
@@ -575,7 +583,7 @@ class FinancialDashboard(ctk.CTkFrame):
         ).grid(row=0, column=0, padx=(12, 4), pady=10)
 
         self.period_combo = self._combo(
-            filters, PERIODS, self._on_period_change, width=165
+            filters, _get_periods(), self._on_period_change, width=165
         )
         self.period_combo.set("Mês atual")
         self.period_combo.grid(row=0, column=1, padx=4, pady=10)
@@ -590,7 +598,7 @@ class FinancialDashboard(ctk.CTkFrame):
         ).grid(row=0, column=2, padx=(12, 4), pady=10)
 
         self.filter_type = self._combo(
-            filters, ["Todos", *TYPE_LABELS], self._on_filter_type, width=130
+            filters, ["Todos", *list(_get_type_labels())], self._on_filter_type, width=130
         )
         self.filter_type.set("Todos")
         self.filter_type.grid(row=0, column=3, padx=4, pady=10)
@@ -629,7 +637,7 @@ class FinancialDashboard(ctk.CTkFrame):
         ).grid(row=0, column=0, columnspan=6, sticky="w", padx=14, pady=(12, 8))
 
         self.transaction_type = self._combo(
-            self.form_card, list(TYPE_LABELS), self._on_form_type, width=130
+            self.form_card, list(_get_type_labels()), self._on_form_type, width=130
         )
         self.transaction_type.set("Despesa")
         self.description = self._entry(self.form_card, "Descrição")
@@ -639,11 +647,11 @@ class FinancialDashboard(ctk.CTkFrame):
         self.notes = self._entry(self.form_card, "Observação (opcional)")
 
         self.save_transaction = PillButton(
-            self.form_card, text="Adicionar",
+            self.form_card, text=t("financial.form.add"),
             command=self._save_transaction, variant="primary", width=110
         )
         self.cancel_edit = PillButton(
-            self.form_card, text="Cancelar",
+            self.form_card, text=t("financial.form.cancel"),
             command=self._clear_form, variant="secondary", width=90
         )
 
@@ -848,7 +856,7 @@ class FinancialDashboard(ctk.CTkFrame):
 
     def _refresh_form_categories(self):
         """Atualiza o combo de categorias do formulário com base no tipo selecionado."""
-        kind = TYPE_LABELS[self.transaction_type.get()]
+        kind = _get_type_labels()[self.transaction_type.get()]
         items = self.service.categories(kind)
         self._form_categories = {item.name: item.id for item in items}
         values = list(self._form_categories) or ["Sem categorias"]
@@ -863,7 +871,7 @@ class FinancialDashboard(ctk.CTkFrame):
         """Atualiza o combo de categorias do filtro com base no tipo selecionado."""
         current = self.filter_category.get()
         selected_type = self.filter_type.get()
-        kind = TYPE_LABELS.get(selected_type)
+        kind = _get_type_labels().get(selected_type)
         items = self.service.categories(kind) if kind else self.service.categories()
         self._filter_categories = {"Todas as categorias": None}
         for item in items:
@@ -885,12 +893,12 @@ class FinancialDashboard(ctk.CTkFrame):
                   category_id, custom_start, custom_end).
         """
         custom_start = custom_end = None
-        if self.period_combo.get() == "Período personalizado":
+        if self.period_combo.get() == t("financial.filter.period.custom"):
             custom_start, custom_end = (
                 parse_br_date(self.custom_start.get()),
                 parse_br_date(self.custom_end.get())
             )
-        kind = TYPE_LABELS.get(self.filter_type.get())
+        kind = _get_type_labels().get(self.filter_type.get())
         return {
             "period": self.period_combo.get(),
             "transaction_type": kind,
@@ -1118,7 +1126,7 @@ class FinancialDashboard(ctk.CTkFrame):
             if not category_id:
                 raise ValueError("Crie ou selecione uma categoria para este tipo.")
             data = (
-                TYPE_LABELS[self.transaction_type.get()],
+                _get_type_labels()[self.transaction_type.get()],
                 self.description.get(),
                 self.amount.get(),
                 category_id,
@@ -1161,7 +1169,7 @@ class FinancialDashboard(ctk.CTkFrame):
             entry.delete(0, "end")
             entry.insert(0, value)
         self.category.set(item.category_name)
-        self.save_transaction.configure(text="Salvar")
+        self.save_transaction.configure(text=t("financial.dialog.save"))
         self.cancel_edit.grid()
         self.form_card.focus_set()
         self.refresh()  # Re-renderiza o histórico para mostrar o destaque
