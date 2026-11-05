@@ -72,6 +72,8 @@ def parse_br_date(value: str | date) -> date:
 class FinancialService:
     def __init__(self, repository: FinancialRepository | None = None, database_path: str | Path | None = None):
         self.repository = repository or FinancialRepository(database_path)
+        # Categorias padrão são inseridas uma única vez no _initialize() do repositório.
+        # Mantemos a chamada para retrocompatibilidade, mas ela é um no-op se já existirem.
         self.ensure_default_categories()
 
     def ensure_default_categories(self) -> None:
@@ -153,7 +155,8 @@ class FinancialService:
         return FinancialSummary(totals[TransactionType.INCOME], totals[TransactionType.EXPENSE], totals[TransactionType.INVESTMENT])
 
     def summary(self, **filters) -> FinancialSummary:
-        return self.summary_for(self.transactions(**filters))
+        # Consulta direta via SQL (SUM/CASE) evitando carregar todas as transações para o Python
+        return self.summary_sql(**filters)
 
     @staticmethod
     def expense_by_category(transactions: list[FinancialTransaction]) -> list[tuple[str, int, str]]:
@@ -177,3 +180,37 @@ class FinancialService:
             if item.transaction_type == TransactionType.EXPENSE:
                 totals[item.occurred_on.strftime("%Y-%m")] += item.amount_cents
         return sorted(totals.items())
+
+    # --- Versões que consultam diretamente o banco via SQL (mais eficiente) ---
+
+    def summary_sql(self, period: str = "Todo o período", transaction_type: TransactionType | str | None = None,
+                    category_id: int | None = None, custom_start: date | None = None,
+                    custom_end: date | None = None, reference: date | None = None) -> FinancialSummary:
+        start, end = self.period_range(period, reference, custom_start, custom_end)
+        kind = TransactionType.from_value(transaction_type) if transaction_type else None
+        return self.repository.summary_sql(start, end, kind, category_id)
+
+    def expense_by_category_sql(self, period: str = "Todo o período",
+                                category_id: int | None = None, custom_start: date | None = None,
+                                custom_end: date | None = None, reference: date | None = None
+                                ) -> list[tuple[str, int, str]]:
+        start, end = self.period_range(period, reference, custom_start, custom_end)
+        return self.repository.expense_by_category_sql(start, end, category_id)
+
+    def allocation_sql(self, period: str = "Todo o período",
+                       category_id: int | None = None, custom_start: date | None = None,
+                       custom_end: date | None = None, reference: date | None = None
+                       ) -> list[tuple[str, int, str]]:
+        result = self.expense_by_category_sql(period, category_id, custom_start, custom_end, reference)
+        start, end = self.period_range(period, reference, custom_start, custom_end)
+        invested = self.repository.summary_sql(start, end, TransactionType.INVESTMENT, category_id).investment_cents
+        if invested:
+            result.append(("Investimentos", invested, "#24C270"))
+        return result
+
+    def monthly_expenses_sql(self, period: str = "Todo o período",
+                             category_id: int | None = None, custom_start: date | None = None,
+                             custom_end: date | None = None, reference: date | None = None
+                             ) -> list[tuple[str, int]]:
+        start, end = self.period_range(period, reference, custom_start, custom_end)
+        return self.repository.monthly_expenses_sql(start, end, category_id)

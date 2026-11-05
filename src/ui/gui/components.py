@@ -9,13 +9,39 @@ Inspirado na referência visual moderna (Fintech / Clean Warm Light):
 
 import customtkinter as ctk
 from colorsys import rgb_to_hsv, hsv_to_rgb
+from decimal import Decimal
+import locale
 
 from src.ui.gui.theme import PALETTES, THEME_MODES
 
+# Tenta definir locale brasileiro para formatação monetária eficiente
+try:
+    locale.setlocale(locale.LC_ALL, "pt_BR.UTF-8")
+except Exception:
+    try:
+        locale.setlocale(locale.LC_ALL, "Portuguese_Brazil.1252")
+    except Exception:
+        pass
 
-def formatar_moeda(valor: float) -> str:
-    """Formata valor float no padrão monetário brasileiro."""
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def formatar_moeda(valor) -> str:
+    """Formata valor no padrão monetário brasileiro.
+
+    Aceita float, int, Decimal ou string. Valores float são convertidos via
+    Decimal(str(valor)) para evitar representações como 1223.1100000000002.
+
+    Usa locale pt_BR quando disponível para evitar múltiplas operações
+    replace() encadeadas em loops de renderização.
+    """
+    if not isinstance(valor, Decimal):
+        valor = Decimal(str(valor))
+    try:
+        # locale.format_string já retorna no formato pt_BR: "1.234,56"
+        formatted = locale.format_string("%.2f", float(valor), grouping=True)
+        return f"R$ {formatted}"
+    except Exception:
+        # Fallback: replace encadeado (mais operações, mas funciona sempre)
+        return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def formatar_tempo(meses) -> str:
@@ -62,14 +88,7 @@ class MetricCard(ctk.CTkFrame):
     """
     Card estilizado com fundo branco, cantos bem arredondados (corner_radius=16)
     e tipografia fiel à referência visual.
-    
-    Animações dinâmicas:
-    - Transição suave de cor de fundo e borda ao passar o mouse (hover)
-    - Efeito sutil de elevação na borda
     """
-
-    ANIMATION_STEPS = 8        # Número de passos na animação de cor
-    ANIMATION_DELAY = 15       # Milissegundos entre cada passo
 
     def __init__(
         self,
@@ -95,14 +114,6 @@ class MetricCard(ctk.CTkFrame):
             border_width=border_width,
             **kwargs
         )
-
-        # Armazena cores originais para animações de hover
-        self._original_fg = fg_color
-        self._original_border = border_color
-        self._hover_fg = _interpolate_color(fg_color, "#E0E0E0", 0.15) if not is_highlight else _interpolate_color(fg_color, "#D0E7D9", 0.15)
-        self._hover_border = _interpolate_color(border_color, "#8E8E93", 0.4)
-        self._is_hovered = False
-        self._animation_id = None
 
         # Cabeçalho do Card (Título + Badge Opcional)
         self.frame_header = ctk.CTkFrame(self, fg_color="transparent")
@@ -140,64 +151,6 @@ class MetricCard(ctk.CTkFrame):
         )
         self.lbl_valor.pack(anchor="w", padx=14, pady=(0, 12))
 
-        # Bind dos eventos de mouse para animações de hover
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        # Propaga eventos para os filhos também
-        self.frame_header.bind("<Enter>", self._on_enter)
-        self.frame_header.bind("<Leave>", self._on_leave)
-        self.lbl_titulo.bind("<Enter>", self._on_enter)
-        self.lbl_titulo.bind("<Leave>", self._on_leave)
-        self.lbl_valor.bind("<Enter>", self._on_enter)
-        self.lbl_valor.bind("<Leave>", self._on_leave)
-        if self.badge:
-            self.badge.bind("<Enter>", self._on_enter)
-            self.badge.bind("<Leave>", self._on_leave)
-
-    def _on_enter(self, event):
-        """Inicia animação de hover suave ao passar o mouse."""
-        self._is_hovered = True
-        self._cancel_animation()
-        self._animate_hover(0)
-
-    def _on_leave(self, event):
-        """Inicia animação de saída suave ao retirar o mouse."""
-        self._is_hovered = False
-        self._cancel_animation()
-        self._animate_hover(self.ANIMATION_STEPS)
-
-    def _cancel_animation(self):
-        """Cancela qualquer animação em andamento."""
-        if self._animation_id is not None:
-            try:
-                self.after_cancel(self._animation_id)
-            except Exception:
-                pass
-            self._animation_id = None
-
-    def _animate_hover(self, step: int):
-        """
-        Anima a transição de cor gradualmente entre o estado normal e hover.
-        step: passo atual (0 = totalmente hover, ANIMATION_STEPS = totalmente normal)
-        """
-        if self._is_hovered:
-            # Transição: normal -> hover
-            factor = step / self.ANIMATION_STEPS
-            current_fg = _interpolate_color(self._original_fg, self._hover_fg, factor)
-            current_border = _interpolate_color(self._original_border, self._hover_border, factor)
-        else:
-            # Transição: hover -> normal
-            factor = step / self.ANIMATION_STEPS
-            current_fg = _interpolate_color(self._hover_fg, self._original_fg, factor)
-            current_border = _interpolate_color(self._hover_border, self._original_border, factor)
-
-        self.configure(fg_color=current_fg, border_color=current_border)
-
-        if 0 <= step < self.ANIMATION_STEPS:
-            self._animation_id = self.after(self.ANIMATION_DELAY, lambda: self._animate_hover(step + 1))
-        else:
-            self._animation_id = None
-
     def update_value(self, novo_valor: str, badge_text: str = None):
         """Atualiza o valor principal e opcionalmente o texto da badge."""
         self.lbl_valor.configure(text=novo_valor)
@@ -208,8 +161,6 @@ class MetricCard(ctk.CTkFrame):
         """Reaplica as cores do card de acordo com o tema (Claro/Escuro)."""
         self._original_fg = pal["accent_bg"] if self._is_highlight else pal["surface"]
         self._original_border = pal["accent"] if self._is_highlight else pal["border"]
-        self._hover_fg = _interpolate_color(self._original_fg, "#404040", 0.15)
-        self._hover_border = _interpolate_color(self._original_border, "#A0A0A0", 0.4)
 
         self.configure(
             fg_color=self._original_fg,
@@ -225,16 +176,10 @@ class PillButton(ctk.CTkButton):
     """
     Botão em formato de pílula (alta curvatura, canto arredondado de 20px),
     seguindo o design dos botões 'Buy', 'Sell' e filtros do print.
-    
-    Animações dinâmicas:
-    - Transição suave de cor ao passar o mouse (hover)
-    - Efeito de clique (pressionar/soltar com mudança de escala)
-    - Efeito de brilho sutil no clique
-    """
 
-    ANIMATION_STEPS = 10       # Número de passos na animação de cor
-    ANIMATION_DELAY = 15       # Milissegundos entre cada passo (mais rápido = mais suave)
-    CLICK_SCALE = 0.96         # Fator de redução ao clicar (96% do tamanho original)
+    Usa o hover_color nativo do CTkButton para o efeito visual de passar o mouse.
+    O comando é executado pelo mecanismo nativo do CTkButton via parâmetro command.
+    """
 
     def __init__(self, master, text: str, command=None, variant: str = "primary", **kwargs):
         self._variant = variant
@@ -278,107 +223,15 @@ class PillButton(ctk.CTkButton):
             **kwargs
         )
 
-        # Armazena cores originais para animações
-        self._original_fg = fg_color
-        self._original_hover = hover_color
-        self._hover_target = hover_color
-        self._is_hovered = False
-        self._is_pressed = False
-        self._animation_id = None
-        self._click_command = command
-
-        # Bind dos eventos de mouse para animações personalizadas
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<ButtonPress-1>", self._on_press)
-        self.bind("<ButtonRelease-1>", self._on_release)
-
-    def _on_enter(self, event):
-        """Inicia animação de hover suave ao passar o mouse."""
-        self._is_hovered = True
-        self._cancel_animation()
-        self._animate_hover(0)
-
-    def _on_leave(self, event):
-        """Inicia animação de saída suave ao retirar o mouse."""
-        self._is_hovered = False
-        self._cancel_animation()
-        self._animate_hover(self.ANIMATION_STEPS)
-
-    def _on_press(self, event):
-        """Efeito ao clicar: reduz ligeiramente o tamanho."""
-        self._is_pressed = True
-        self._cancel_animation()
-        # Efeito visual imediato: escurecer levemente
-        pressed_color = _interpolate_color(self._original_fg, "#000000", 0.2)
-        self.configure(fg_color=pressed_color)
-
-    def _on_release(self, event):
-        """Efeito ao soltar o clique: retorna ao estado normal ou hover e executa o comando."""
-        self._is_pressed = False
-        # Executa o comando original do botão se existir
-        if self._click_command is not None:
-            try:
-                self._click_command()
-            except Exception as exc:
-                import tkinter.messagebox as msg
-                msg.showerror("Erro", f"Erro ao executar ação do botão: {exc}", parent=self)
-        if self._is_hovered:
-            self._cancel_animation()
-            self._animate_hover(0)
-        else:
-            self._cancel_animation()
-            self._animate_hover(self.ANIMATION_STEPS)
-
-    def _cancel_animation(self):
-        """Cancela qualquer animação em andamento."""
-        if self._animation_id is not None:
-            try:
-                self.after_cancel(self._animation_id)
-            except Exception:
-                pass
-            self._animation_id = None
-
-    def _animate_hover(self, step: int):
-        """
-        Anima a transição de cor gradualmente entre o estado normal e hover.
-        step: passo atual (0 = totalmente hover, ANIMATION_STEPS = totalmente normal)
-        """
-        if self._is_pressed:
-            # Mantém cor pressionada se o botão estiver clicado
-            pressed_color = _interpolate_color(self._original_fg, "#000000", 0.2)
-            self.configure(fg_color=pressed_color)
-            return
-
-        if self._is_hovered:
-            # Transição: normal -> hover
-            factor = step / self.ANIMATION_STEPS
-            current_color = _interpolate_color(self._original_fg, self._hover_target, 1.0 - factor)
-        else:
-            # Transição: hover -> normal
-            factor = step / self.ANIMATION_STEPS
-            current_color = _interpolate_color(self._hover_target, self._original_fg, factor)
-
-        self.configure(fg_color=current_color)
-
-        if 0 <= step < self.ANIMATION_STEPS:
-            self._animation_id = self.after(self.ANIMATION_DELAY, lambda: self._animate_hover(step + 1))
-        else:
-            self._animation_id = None
-
     def apply_theme(self, pal: dict):
         """Reaplica as cores do botão de acordo com o tema (Claro/Escuro)."""
         if self._variant == "primary":
-            self._original_fg = pal["button_fg"]
-            self._hover_target = pal["button_hover"]
             self.configure(
                 fg_color=pal["button_fg"],
                 hover_color=pal["button_hover"],
                 text_color=pal["button_text"],
             )
         elif self._variant == "secondary":
-            self._original_fg = pal["button_outline_fg"]
-            self._hover_target = pal["button_outline_hover"]
             self.configure(
                 fg_color=pal["button_outline_fg"],
                 hover_color=pal["button_outline_hover"],
@@ -386,8 +239,6 @@ class PillButton(ctk.CTkButton):
                 border_color=pal["button_outline_border"],
             )
         else:
-            self._original_fg = pal["surface_input"]
-            self._hover_target = pal["border_input"]
             self.configure(
                 fg_color=pal["surface_input"],
                 hover_color=pal["border_input"],

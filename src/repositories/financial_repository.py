@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Iterable, Optional
 
-from src.domain.financial_models import FinancialCategory, FinancialTransaction, TransactionType
+from src.domain.financial_models import FinancialCategory, FinancialSummary, FinancialTransaction, TransactionType
 from src.repositories.db_encryption import DatabaseEncryption
 
 
@@ -39,6 +39,7 @@ class FinancialRepository:
         self.encrypt = encrypt
         self._temp_path: Optional[Path] = None
         self._encryption: Optional[DatabaseEncryption] = None
+        self._connection: Optional[sqlite3.Connection] = None
 
         if self.encrypt:
             self._encryption = DatabaseEncryption(
@@ -51,6 +52,10 @@ class FinancialRepository:
 
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+
+        for tmp in self.database_path.parent.glob("tmp*.sqlite3"):
+            try: tmp.unlink()
+            except OSError: pass
 
     def _decrypt_to_temp(self) -> Path:
         """Descriptografa o banco .enc (se existir) para um arquivo temporário."""
@@ -67,16 +72,23 @@ class FinancialRepository:
         return temp_path
 
     def _connect(self) -> sqlite3.Connection:
-        # Quando criptografado, todas as conexões usam o arquivo temporário
-        # descriptografado em vez do caminho original.
-        path = self._temp_path if self._temp_path is not None else self.database_path
-        connection = sqlite3.connect(path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        """Retorna uma conexão persistente, criando apenas na primeira vez."""
+        if self._connection is None:
+            path = self._temp_path if self._temp_path is not None else self.database_path
+            self._connection = sqlite3.connect(path)
+            self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA foreign_keys = ON")
+        return self._connection
 
     def close(self) -> None:
         """Recriptografa o banco temporário de volta para o .enc e limpa resíduos."""
+        if self._connection is not None:
+            try:
+                self._connection.close()
+            except Exception:
+                pass
+            self._connection = None
+
         if self._temp_path is not None and self._encryption is not None:
             encrypted_path = self.database_path.with_suffix(self.database_path.suffix + ".enc")
             try:
@@ -128,6 +140,28 @@ class FinancialRepository:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_record ON audit_log(table_name, record_id)")
             conn.execute("INSERT OR REPLACE INTO schema_metadata(key, value) VALUES ('schema_version', ?)", (str(self.SCHEMA_VERSION),))
 
+            # Insere categorias padrão apenas uma vez, se o banco estiver vazio
+            if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
+                default_categories = (
+                    ("Salário", "receita", "#24C270"), ("Freelance", "receita", "#4F8CFF"),
+                    ("Dividendos", "receita", "#A970FF"), ("Rendimentos", "receita", "#32B8C6"),
+                    ("Outros", "receita", "#8E8E93"),
+                    ("Alimentação", "despesa", "#FF9F43"), ("Transporte", "despesa", "#4F8CFF"),
+                    ("Moradia", "despesa", "#FF6B6B"), ("Saúde", "despesa", "#A970FF"),
+                    ("Educação", "despesa", "#32B8C6"), ("Lazer", "despesa", "#F368E0"),
+                    ("Assinaturas", "despesa", "#8395A7"), ("Compras", "despesa", "#F9CA24"),
+                    ("Contas", "despesa", "#576574"), ("Outros", "despesa", "#8E8E93"),
+                    ("CDB", "investimento", "#24C270"), ("Tesouro Direto", "investimento", "#4F8CFF"),
+                    ("Ações", "investimento", "#FF9F43"), ("Fundos Imobiliários", "investimento", "#A970FF"),
+                    ("ETFs", "investimento", "#32B8C6"), ("Criptomoedas", "investimento", "#F9CA24"),
+                    ("Reserva de Emergência", "investimento", "#6FE29F"), ("Outros", "investimento", "#8E8E93"),
+                )
+                for name, ttype, color in default_categories:
+                    conn.execute(
+                        "INSERT INTO categories(name, transaction_type, color, active) VALUES (?, ?, ?, 1)",
+                        (name, ttype, color),
+                    )
+
     @staticmethod
     def _category(row: sqlite3.Row) -> FinancialCategory:
         return FinancialCategory(row["name"], TransactionType(row["transaction_type"]), row["color"], row["id"], bool(row["active"]))
@@ -176,6 +210,7 @@ class FinancialRepository:
             with self._connect() as conn:
                 cursor = conn.execute("INSERT INTO categories(name, transaction_type, color, active) VALUES (?, ?, ?, ?)",
                     (category.name, category.transaction_type.value, category.color, int(category.active)))
+                self._audit(conn, "categories", cursor.lastrowid, "INSERT", None, str(category.__dict__))
                 return FinancialCategory(category.name, category.transaction_type, category.color, cursor.lastrowid, category.active)
         except sqlite3.IntegrityError as exc:
             raise ValueError("Já existe uma categoria com esse nome para este tipo.") from exc
@@ -188,25 +223,37 @@ class FinancialRepository:
                 current = conn.execute("SELECT transaction_type FROM categories WHERE id = ?", (category.id,)).fetchone()
                 if current is None:
                     raise ValueError("Categoria não encontrada.")
+                old_data = str(dict(current))
                 if current["transaction_type"] != category.transaction_type.value and conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id=?", (category.id,)).fetchone()[0]:
                     raise ValueError("Não é possível alterar o tipo de uma categoria que já possui lançamentos.")
                 conn.execute("UPDATE categories SET name=?, transaction_type=?, color=?, active=? WHERE id=?",
                     (category.name, category.transaction_type.value, category.color, int(category.active), category.id))
+                self._audit(conn, "categories", category.id, "UPDATE", old_data, str(category.__dict__))
         except sqlite3.IntegrityError as exc:
             raise ValueError("Já existe uma categoria com esse nome para este tipo.") from exc
         return category
 
     def archive_category(self, category_id: int) -> None:
         with self._connect() as conn:
+            row = conn.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
+            if row is None:
+                raise ValueError("Categoria não encontrada.")
+            old_data = str(dict(row))
             if conn.execute("UPDATE categories SET active=0 WHERE id=?", (category_id,)).rowcount == 0:
                 raise ValueError("Categoria não encontrada.")
+            self._audit(conn, "categories", category_id, "UPDATE", old_data, str(dict(row)) + ", active=0")
 
     def delete_category(self, category_id: int) -> None:
         with self._connect() as conn:
+            row = conn.execute("SELECT * FROM categories WHERE id=?", (category_id,)).fetchone()
+            if row is None:
+                raise ValueError("Categoria não encontrada.")
+            old_data = str(dict(row))
             if conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id=?", (category_id,)).fetchone()[0]:
                 raise CategoryInUseError("A categoria possui lançamentos. Arquive-a ou reatribua seus registros.")
             if conn.execute("DELETE FROM categories WHERE id=?", (category_id,)).rowcount == 0:
                 raise ValueError("Categoria não encontrada.")
+            self._audit(conn, "categories", category_id, "DELETE", old_data, None)
 
     def add_transaction(self, transaction: FinancialTransaction) -> FinancialTransaction:
         with self._connect() as conn:
@@ -259,3 +306,65 @@ class FinancialRepository:
                  JOIN categories c ON c.id=t.category_id""" + where + " ORDER BY t.occurred_on DESC, t.id DESC"
         with self._connect() as conn:
             return [self._transaction(row) for row in conn.execute(sql, params)]
+
+    def _where_clauses(self, start: date | None = None, end: date | None = None,
+                       transaction_type: TransactionType | None = None,
+                       category_id: int | None = None) -> tuple[str, list]:
+        """Constrói cláusula WHERE e params para consultas de transações."""
+        clauses, params = [], []
+        if start:
+            clauses.append("t.occurred_on >= ?"); params.append(start.isoformat())
+        if end:
+            clauses.append("t.occurred_on <= ?"); params.append(end.isoformat())
+        if transaction_type:
+            clauses.append("t.transaction_type = ?"); params.append(TransactionType.from_value(transaction_type).value)
+        if category_id:
+            clauses.append("t.category_id = ?"); params.append(category_id)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return where, params
+
+    def summary_sql(self, start: date | None = None, end: date | None = None,
+                    transaction_type: TransactionType | None = None,
+                    category_id: int | None = None) -> FinancialSummary:
+        """Retorna resumo agregado direto do banco via SQL (SUM/CASE), evitando loop Python."""
+        where, params = self._where_clauses(start, end, transaction_type, category_id)
+        with self._connect() as conn:
+            row = conn.execute(f"""
+                SELECT
+                    COALESCE(SUM(CASE WHEN t.transaction_type = 'receita' THEN t.amount_cents ELSE 0 END), 0) AS income,
+                    COALESCE(SUM(CASE WHEN t.transaction_type = 'despesa' THEN t.amount_cents ELSE 0 END), 0) AS expense,
+                    COALESCE(SUM(CASE WHEN t.transaction_type = 'investimento' THEN t.amount_cents ELSE 0 END), 0) AS investment
+                FROM transactions t{where}
+            """, params).fetchone()
+        return FinancialSummary(
+            income_cents=int(row["income"]),
+            expense_cents=int(row["expense"]),
+            investment_cents=int(row["investment"]),
+        )
+
+    def expense_by_category_sql(self, start: date | None = None, end: date | None = None,
+                                category_id: int | None = None) -> list[tuple[str, int, str]]:
+        """Retorna despesas agregadas por categoria direto do banco via SQL GROUP BY."""
+        where, params = self._where_clauses(start, end, TransactionType.EXPENSE, category_id)
+        with self._connect() as conn:
+            rows = conn.execute(f"""
+                SELECT c.name AS name, c.color AS color, SUM(t.amount_cents) AS total
+                FROM transactions t
+                JOIN categories c ON c.id = t.category_id{where}
+                GROUP BY c.id, c.name, c.color
+                ORDER BY total DESC
+            """, params).fetchall()
+        return [(row["name"], int(row["total"]), row["color"] or "#8E8E93") for row in rows]
+
+    def monthly_expenses_sql(self, start: date | None = None, end: date | None = None,
+                             category_id: int | None = None) -> list[tuple[str, int]]:
+        """Retorna despesas agregadas por mês direto do banco via SQL GROUP BY."""
+        where, params = self._where_clauses(start, end, TransactionType.EXPENSE, category_id)
+        with self._connect() as conn:
+            rows = conn.execute(f"""
+                SELECT substr(t.occurred_on, 1, 7) AS month, SUM(t.amount_cents) AS total
+                FROM transactions t{where}
+                GROUP BY month
+                ORDER BY month
+            """, params).fetchall()
+        return [(row["month"], int(row["total"])) for row in rows]

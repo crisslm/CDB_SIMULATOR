@@ -19,6 +19,10 @@ from src.domain.strategies import YieldStrategy
 # Limite máximo de segurança para períodos (100 anos = 1200 meses)
 MAX_SIMULATION_MONTHS = 1200
 
+# Limite máximo de saldo simulado para evitar estouro de Decimal/InvalidOperation
+# e valores exorbitantes com taxas altas (ex: 50% a.m. por 100 anos)
+MAX_SIMULATION_BALANCE = Decimal("10000000000000")  # 10 trilhões
+
 # Tolerância para comparação de taxa com zero (evita erro de ponto flutuante)
 ZERO_TOLERANCE = 1e-12
 
@@ -59,6 +63,15 @@ class InvestmentSimulatorService:
             )
             current_balance += interest_month
 
+            # Limite de segurança: impede valores exorbitantes com taxas altas
+            # (ex: 50% a.m. por 100 anos) que causariam estouro do Decimal/InvalidOperation.
+            if current_balance > MAX_SIMULATION_BALANCE:
+                raise ValueError(
+                    f"O montante projetado excede o limite de R$ "
+                    f"{MAX_SIMULATION_BALANCE:,.2f} (10 trilhões). "
+                    f"Reduza a taxa de rendimento, o prazo ou o valor inicial."
+                )
+
             record = MonthlyRecord(
                 month=month,
                 invested_to_date=float(total_invested),
@@ -71,8 +84,13 @@ class InvestmentSimulatorService:
         months_to_target = self.calculate_months_to_target(params, strategy)
 
         # Cálculo do Imposto de Renda regressivo (CDB / Renda Fixa)
-        # Converte meses para dias aproximados (meses * 30)
-        ir_aliquota = calcular_aliquota_ir(total_months * 30)
+        # Usa dias reais entre start_date e end_date quando fornecidos;
+        # caso contrário, mantém a aproximação meses * 30 como fallback.
+        if params.start_date and params.end_date:
+            dias_ir = (params.end_date - params.start_date).days
+        else:
+            dias_ir = total_months * 30
+        ir_aliquota = calcular_aliquota_ir(dias_ir)
         ir_total = (total_interest * Decimal(str(ir_aliquota))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )

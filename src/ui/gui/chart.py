@@ -12,6 +12,7 @@ Estilizado fielmente à referência visual de Fintech / Neumorphic Clean:
 
 from typing import List, Optional
 import math
+from decimal import Decimal, ROUND_HALF_UP
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter
@@ -36,10 +37,22 @@ class InvestmentChart:
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.master)
         self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
 
+        # Referências aos artistas para atualização incremental (sem clear/redraw completo)
+        self._line_total = None
+        self._line_invested = None
+        self._fill_area = None
+        self._scatter_final = None
+        self._vline_final = None
+        self._legend = None
+
         # Gráfico de barras para evolução até a meta
         self.fig_bar = None
         self.ax_bar = None
         self.canvas_bar = None
+        self._bars_invested = None
+        self._bars_total = None
+        self._line_meta = None
+        self._legend_bar = None
         if self.bar_master is not None:
             self.fig_bar, self.ax_bar = plt.subplots(figsize=(7, 3.2), dpi=100)
             self.fig_bar.patch.set_facecolor(self.palette["chart_bg"])
@@ -58,9 +71,9 @@ class InvestmentChart:
 
     def plot_timeline(self, initial_amount: float, timeline: List[MonthlyRecord]):
         """
-        Redesenha o gráfico de forma performática limpando apenas os eixos (ax.clear()).
+        Atualiza o gráfico reutilizando artistas existentes (set_data) sempre que possível,
+        evitando ax.clear() e recriação completa de linhas, legenda e eixos.
         """
-        self.ax.clear()
         self.ax.set_facecolor(self.palette["chart_bg"])
 
         if not timeline:
@@ -73,64 +86,93 @@ class InvestmentChart:
             raw_totals = [initial_amount] + [record.total_balance for record in timeline]
 
         pal = self.palette
-        mint_line = "#24C270"      # Verde menta característico (mantido nos dois temas)
-        mint_fill = "#24C270"
+        mint_line = "#24C270"
         invested_line = pal["invested_line"]
 
-        # 1. Linha do Montante Total (Curva Verde Suave)
-        self.ax.plot(raw_months, raw_totals, label="Montante Bruto (com juros)", color=mint_line, linewidth=3.0, zorder=3)
-
-        # 2. Linha do Total Investido (Tracejada sutil)
-        self.ax.plot(raw_months, raw_invested, label="Total Aportado (do bolso)", color=invested_line, linestyle="--", linewidth=1.8, zorder=2)
-
-        # 3. Preenchimento sutil de área com transparência
-        self.ax.fill_between(raw_months, 0, raw_totals, color=mint_fill, alpha=0.12, zorder=1)
-
-        # 4. Ponto de destaque no valor final (marcador do print)
         final_x = raw_months[-1]
         final_y = raw_totals[-1]
-        self.ax.scatter([final_x], [final_y], color=self.palette["chart_bg"], edgecolors=mint_line, s=80, linewidths=3.0, zorder=4)
 
-        # Linha vertical pontilhada indicando o ponto final
-        self.ax.vlines(x=final_x, ymin=0, ymax=final_y, colors=mint_line, linestyles=":", linewidth=1.5, alpha=0.6, zorder=2)
+        # Cria artistas na primeira execução; depois apenas atualiza dados
+        if self._line_total is None:
+            self._line_total, = self.ax.plot(
+                raw_months, raw_totals,
+                label="Montante Bruto (com juros)", color=mint_line,
+                linewidth=3.0, zorder=3,
+            )
+            self._line_invested, = self.ax.plot(
+                raw_months, raw_invested,
+                label="Total Aportado (do bolso)", color=invested_line,
+                linestyle="--", linewidth=1.8, zorder=2,
+            )
+            self._fill_area = self.ax.fill_between(
+                raw_months, 0, raw_totals, color=mint_line, alpha=0.12, zorder=1,
+            )
+            self._scatter_final = self.ax.scatter(
+                [final_x], [final_y], color=self.palette["chart_bg"],
+                edgecolors=mint_line, s=80, linewidths=3.0, zorder=4,
+            )
+            self._vline_final = self.ax.vlines(
+                x=final_x, ymin=0, ymax=final_y, colors=mint_line,
+                linestyles=":", linewidth=1.5, alpha=0.6, zorder=2,
+            )
+            # Estilo dos eixos (feito apenas uma vez)
+            self.ax.spines['top'].set_visible(False)
+            self.ax.spines['right'].set_visible(False)
+            self.ax.spines['left'].set_visible(False)
+            self.ax.spines['bottom'].set_color(pal["chart_spine"])
+            self.ax.spines['bottom'].set_linewidth(1.2)
+            self.ax.grid(axis='y', linestyle='-', alpha=0.15, color=pal["chart_grid"])
+            self.ax.grid(axis='x', visible=False)
+            self.ax.tick_params(axis='x', colors=pal["chart_tick"], labelsize=9, length=0)
+            self.ax.tick_params(axis='y', colors=pal["chart_tick"], labelsize=9, length=0)
+            self.ax.set_ylim(bottom=0)
 
-        # Limpeza visual dos eixos (estilo minimalista despined)
-        self.ax.spines['top'].set_visible(False)
-        self.ax.spines['right'].set_visible(False)
-        self.ax.spines['left'].set_visible(False)
+            def _formato_moeda(x, pos):
+                if x >= 1_000_000:
+                    return f"R$ {x*1e-6:.1f}M"
+                elif x >= 1_000:
+                    return f"R$ {x*1e-3:.0f}k"
+                elif x == 0:
+                    return "R$ 0"
+                return f"R$ {x:.0f}"
+
+            self.ax.yaxis.set_major_formatter(FuncFormatter(_formato_moeda))
+        else:
+            # Atualiza dados dos artistas existentes (muito mais rápido que clear/redraw)
+            self._line_total.set_data(raw_months, raw_totals)
+            self._line_invested.set_data(raw_months, raw_invested)
+            self._fill_area.set_paths([])  # limpa polígonos antigos
+            self._fill_area = self.ax.fill_between(
+                raw_months, 0, raw_totals, color=mint_line, alpha=0.12, zorder=1,
+            )
+            self._scatter_final.set_offsets([[final_x, final_y]])
+            self._vline_final.set_segments([[(final_x, 0), (final_x, final_y)]])
+
+        # Ajusta limites dos eixos
+        self.ax.set_xlim(0, max(raw_months) * 1.02 if raw_months else 1)
+        self.ax.set_ylim(bottom=0, top=max(raw_totals) * 1.1 if raw_totals else 1)
+
+        # Atualiza cores dos elementos de eixo conforme tema (leve, sem recriar)
         self.ax.spines['bottom'].set_color(pal["chart_spine"])
-        self.ax.spines['bottom'].set_linewidth(1.2)
+        self.ax.grid(axis='y', color=pal["chart_grid"])
+        self.ax.tick_params(axis='x', colors=pal["chart_tick"])
+        self.ax.tick_params(axis='y', colors=pal["chart_tick"])
 
-        # Grade horizontal suave
-        self.ax.grid(axis='y', linestyle='-', alpha=0.15, color=pal["chart_grid"])
-        self.ax.grid(axis='x', visible=False)
-
-        self.ax.tick_params(axis='x', colors=pal["chart_tick"], labelsize=9, length=0)
-        self.ax.tick_params(axis='y', colors=pal["chart_tick"], labelsize=9, length=0)
-
-        # Formatação de Moeda Simplificada para o Eixo Y
-        def _formato_moeda(x, pos):
-            if x >= 1_000_000:
-                return f"R$ {x*1e-6:.1f}M"
-            elif x >= 1_000:
-                return f"R$ {x*1e-3:.0f}k"
-            elif x == 0:
-                return "R$ 0"
-            return f"R$ {x:.0f}"
-
-        self.ax.yaxis.set_major_formatter(FuncFormatter(_formato_moeda))
-        self.ax.set_ylim(bottom=0)
-
-        # Legenda no topo em estilo pílula limpa
-        legend = self.ax.legend(
-            loc="upper left",
-            frameon=True,
-            facecolor=pal["chart_legend_bg"],
-            edgecolor=pal["chart_legend_edge"],
-            fontsize=9
-        )
-        if legend:
-            for text in legend.get_texts():
+        # Atualiza legenda se existir
+        if self._legend is None:
+            self._legend = self.ax.legend(
+                loc="upper left", frameon=True,
+                facecolor=pal["chart_legend_bg"],
+                edgecolor=pal["chart_legend_edge"],
+                fontsize=9,
+            )
+            for text in self._legend.get_texts():
+                text.set_color(pal["chart_legend_text"])
+        else:
+            # Atualiza apenas cores da legenda
+            self._legend.get_frame().set_facecolor(pal["chart_legend_bg"])
+            self._legend.get_frame().set_edgecolor(pal["chart_legend_edge"])
+            for text in self._legend.get_texts():
                 text.set_color(pal["chart_legend_text"])
 
         self.fig.tight_layout()
@@ -173,22 +215,28 @@ class InvestmentChart:
             return
         else:
             max_month_show = months_to_target
-            # Projetar evolução até a meta usando os mesmos parâmetros
-            saldo_atual = initial_amount
-            investido_atual = initial_amount
+            # Projetar evolução até a meta usando os mesmos parâmetros (Decimal para evitar erro de float)
+            saldo_atual = Decimal(str(initial_amount))
+            investido_atual = Decimal(str(initial_amount))
+            monthly_rate_d = Decimal(str(monthly_rate))
+            monthly_contrib_d = Decimal(str(monthly_contribution))
             # Construir timeline projetado até max_month_show
             projected_records = []
             for mes in range(1, max_month_show + 1):
-                saldo_atual += monthly_contribution
-                investido_atual += monthly_contribution
-                if monthly_rate > 0:
-                    rendimento = saldo_atual * monthly_rate
+                saldo_atual += monthly_contrib_d
+                investido_atual += monthly_contrib_d
+                if monthly_rate_d > 0:
+                    rendimento = (saldo_atual * monthly_rate_d).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
                     saldo_atual += rendimento
+                else:
+                    rendimento = Decimal("0.00")
                 projected_records.append(MonthlyRecord(
                     month=mes,
-                    invested_to_date=round(investido_atual, 2),
-                    interest_earned_month=round(rendimento if monthly_rate > 0 else 0.0, 2),
-                    total_balance=round(saldo_atual, 2)
+                    invested_to_date=float(investido_atual),
+                    interest_earned_month=float(rendimento),
+                    total_balance=float(saldo_atual)
                 ))
 
             # Agrupa por ano para melhor visualização quando período longo
@@ -232,18 +280,39 @@ class InvestmentChart:
         width = 0.35
 
         pal = self.palette
-        bar_invested = self.ax_bar.bar([i - width/2 for i in x], invested_vals, width,
-                                       label="Total Aportado", color=pal["invested_line"], alpha=0.85)
-        bar_total = self.ax_bar.bar([i + width/2 for i in x], total_vals, width,
-                                    label="Montante Total", color="#24C270", alpha=0.9)
+
+        # Cria barras na primeira execução; depois apenas atualiza alturas
+        if self._bars_invested is None:
+            self._bars_invested = self.ax_bar.bar(
+                [i - width/2 for i in x], invested_vals, width,
+                label="Total Aportado", color=pal["invested_line"], alpha=0.85,
+            )
+            self._bars_total = self.ax_bar.bar(
+                [i + width/2 for i in x], total_vals, width,
+                label="Montante Total", color="#24C270", alpha=0.9,
+            )
+        else:
+            for rect, val in zip(self._bars_invested, invested_vals):
+                rect.set_height(val)
+            for rect, val in zip(self._bars_total, total_vals):
+                rect.set_height(val)
 
         # Linha da meta se especificada
         if target_amount is not None and target_amount > 0:
-            self.ax_bar.axhline(y=target_amount, color=pal["meta_line"], linestyle="--", linewidth=2,
-                               label=f"Meta: {target_amount:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."),
-                               alpha=0.8)
-            self.ax_bar.legend(loc="upper left", frameon=True, facecolor=pal["chart_legend_bg"],
-                              edgecolor=pal["chart_legend_edge"], fontsize=8)
+            if self._line_meta is None:
+                self._line_meta = self.ax_bar.axhline(
+                    y=target_amount, color=pal["meta_line"], linestyle="--",
+                    linewidth=2, alpha=0.8,
+                )
+            else:
+                self._line_meta.set_ydata([target_amount, target_amount])
+
+            self.ax_bar.legend(
+                loc="upper left", frameon=True,
+                facecolor=pal["chart_legend_bg"],
+                edgecolor=pal["chart_legend_edge"],
+                fontsize=8,
+            )
 
         # Estilo
         self.ax_bar.spines['top'].set_visible(False)
@@ -272,10 +341,19 @@ class InvestmentChart:
         self.ax_bar.set_xticklabels(labels, ha='right')
 
         if target_amount is None or target_amount <= 0:
-            legend = self.ax_bar.legend(loc="upper left", frameon=True, facecolor=pal["chart_legend_bg"],
-                                       edgecolor=pal["chart_legend_edge"], fontsize=8)
-            if legend:
-                for text in legend.get_texts():
+            if self._legend_bar is None:
+                self._legend_bar = self.ax_bar.legend(
+                    loc="upper left", frameon=True,
+                    facecolor=pal["chart_legend_bg"],
+                    edgecolor=pal["chart_legend_edge"],
+                    fontsize=8,
+                )
+                for text in self._legend_bar.get_texts():
+                    text.set_color(pal["chart_legend_text"])
+            else:
+                self._legend_bar.get_frame().set_facecolor(pal["chart_legend_bg"])
+                self._legend_bar.get_frame().set_edgecolor(pal["chart_legend_edge"])
+                for text in self._legend_bar.get_texts():
                     text.set_color(pal["chart_legend_text"])
 
         self.ax_bar.set_title("Evolução do Capital até a Meta", color=pal["text"], fontsize=11, pad=10)

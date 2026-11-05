@@ -70,10 +70,10 @@ class DatabaseEncryption:
                     f"A variável de ambiente {ENV_VAR_NAME} não é uma chave Fernet válida."
                 ) from exc
 
-        # 2. Tentar carregar chave existente do disco (legado)
+        # 2. Tentar carregar chave existente do disco (legado ou novo formato com versão)
         if self.key_path.exists():
             raw_key = self.key_path.read_bytes()
-            return Fernet(raw_key)
+            return self._create_fernet_from_stored(raw_key, password=password)
 
         # 3. Gerar nova chave
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,11 +87,12 @@ class DatabaseEncryption:
                 iterations=480_000,
             )
             key = base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
-            # Armazena salt + chave derivada para permitir rederivação futura
-            self.key_path.write_bytes(salt + key)
+            # Armazena: versão \x01 + salt (16 bytes) + chave derivada base64
+            self.key_path.write_bytes(b"\x01" + salt + key)
         else:
             key = Fernet.generate_key()
-            self.key_path.write_bytes(key)
+            # Armazena: versão \x00 + chave Fernet direta
+            self.key_path.write_bytes(b"\x00" + key)
 
         # Restringe permissões do arquivo de chave quando possível (Unix)
         try:
@@ -100,6 +101,40 @@ class DatabaseEncryption:
             pass
 
         return Fernet(key)
+
+    @staticmethod
+    def _create_fernet_from_stored(raw_key: bytes, password: str | None = None) -> Fernet:
+        """Recria Fernet a partir de bytes armazenados, respeitando formato com versão.
+
+        Formatos suportados:
+        - \\x00 + chave Fernet (legado / sem senha)
+        - \\x01 + salt (16 bytes) + chave derivada base64 (com senha)
+        - Fallback: interpreta tudo como chave Fernet (retrocompatibilidade)
+        """
+        if not raw_key:
+            raise ValueError("Arquivo de chave vazio.")
+
+        version = raw_key[:1]
+        if version == b"\x00":
+            return Fernet(raw_key[1:])
+        if version == b"\x01":
+            if len(raw_key) < 17:
+                raise ValueError("Arquivo de chave corrompido: salt ausente.")
+            if password is None:
+                raise ValueError("Senha é necessária para carregar este arquivo de chave.")
+            salt = raw_key[1:17]
+            derived_key_b64 = raw_key[17:]
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=480_000,
+            )
+            key = base64.urlsafe_b64encode(kdf.derive(password.encode("utf-8")))
+            return Fernet(key)
+
+        # Fallback legado: tenta interpretar todo o conteúdo como chave Fernet
+        return Fernet(raw_key)
 
     def encrypt_file(self, source: Path, destination: Path) -> None:
         """Criptografa o conteúdo de ``source`` e grava em ``destination``."""

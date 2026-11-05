@@ -9,11 +9,12 @@ Design Mobile-Friendly & Desktop Responsivo:
 
 import json
 from pathlib import Path
+from typing import Optional
 
 import customtkinter as ctk
 from tkinter import messagebox
 from src.services.simulator_service import InvestmentSimulatorService, MAX_SIMULATION_MONTHS
-from src.services.financial_service import FinancialService
+from src.services.financial_service import FinancialService, parse_amount_to_cents
 from src.domain.models import SimulationParams
 from src.domain.strategies import CompoundInterestStrategy, CDIStrategy
 from src.ui.gui.chart import InvestmentChart
@@ -48,6 +49,7 @@ class ModernAppGUI(ctk.CTk):
         self.is_mobile_layout = None
         self._last_width = 0
         self._last_height = 0
+        self._resize_after_id: Optional[str] = None
 
         # Visual e Cores - o tema é carregado da preferência salva (padrão: Claro)
         self.theme_mode = self._load_theme()
@@ -451,7 +453,6 @@ class ModernAppGUI(ctk.CTk):
 
         # Gráficos (re-renderiza com as cores do novo tema)
         self.chart_controller.apply_theme(pal)
-        self.on_simulate_click()
         if hasattr(self, "financial_dashboard"):
             self.financial_dashboard.apply_theme(pal)
         self._update_navigation()
@@ -560,7 +561,12 @@ class ModernAppGUI(ctk.CTk):
             if abs(event.width - self._last_width) > 15:
                 self._last_width = event.width
                 self._last_height = event.height
-                self._apply_responsive_layout(event.width)
+                # Debounce: adia o redesenho até o usuário parar de redimensionar
+                if self._resize_after_id is not None:
+                    self.after_cancel(self._resize_after_id)
+                self._resize_after_id = self.after(
+                    150, lambda: self._apply_responsive_layout(event.width)
+                )
 
     def _apply_responsive_layout(self, window_width: int):
         """
@@ -627,23 +633,47 @@ class ModernAppGUI(ctk.CTk):
             else:
                 card.grid(row=row, column=col, padx=4, pady=3, sticky="nsew")
 
+    def _parse_percent(self, value: str) -> float:
+        """Converte string de percentual (ex: '12,5', '12.5', 'R$ 12,5') para float."""
+        raw = value.strip().replace("R$", "").replace(" ", "").replace("%", "").replace(",", ".")
+        return float(raw)
+
     def on_simulate_click(self):
         """Executa a lógica de simulação com validação completa e atualiza a interface."""
         try:
-            inicial = float(self.entry_inicial.get().strip().replace(",", "."))
-            mensal = float(self.entry_mensal.get().strip().replace(",", "."))
-            taxa_raw = float(self.entry_taxa.get().strip().replace(",", "."))
-            periodo_raw = float(self.entry_periodo.get().strip().replace(",", "."))
+            inicial = parse_amount_to_cents(self.entry_inicial.get()) / 100.0
+            mensal = parse_amount_to_cents(self.entry_mensal.get()) / 100.0
+            taxa_raw = self._parse_percent(self.entry_taxa.get())
+            periodo_raw = self._parse_percent(self.entry_periodo.get())
             meta_str = self.entry_meta.get().strip().replace(",", ".")
-            meta_val = float(meta_str) if meta_str else 1_000_000.0
+            meta_val = parse_amount_to_cents(meta_str) / 100.0 if meta_str else 1_000_000.0
+
+            # Limite monetário de segurança (1 trilhão)
+            LIMITE_MONETARIO = 1_000_000_000_000.0
+            for nome, valor in (("Valor Inicial", inicial), ("Aporte Mensal", mensal), ("Meta", meta_val)):
+                if valor > LIMITE_MONETARIO:
+                    messagebox.showerror(
+                        "Erro de Valor",
+                        f"{nome} não pode exceder R$ {LIMITE_MONETARIO:,.2f}."
+                    )
+                    return
 
             if inicial < 0 or mensal < 0:
                 messagebox.showerror("Erro de Valor", "Os valores de aportes não podem ser negativos.")
                 return
 
-            if taxa_raw < 0 or taxa_raw > 100:
-                messagebox.showerror("Erro de Valor", "A taxa de rendimento deve estar entre 0% e 100%.")
-                return
+            # Validação de taxa diferenciada por estratégia
+            if "CDI" in self.combo_estrategia.get():
+                if taxa_raw <= 0 or taxa_raw > 500:
+                    messagebox.showerror(
+                        "Erro de Valor",
+                        "O percentual do CDI deve estar entre 0% e 500%."
+                    )
+                    return
+            else:
+                if taxa_raw < 0 or taxa_raw > 100:
+                    messagebox.showerror("Erro de Valor", "A taxa de rendimento deve estar entre 0% e 100%.")
+                    return
 
             if periodo_raw <= 0:
                 messagebox.showerror("Erro de Prazo", "O prazo de investimento deve ser maior que zero.")
@@ -663,42 +693,52 @@ class ModernAppGUI(ctk.CTk):
             )
             return
 
-        # Conversão de prazo em meses com proteção contra período fracionário menor que 1 mês
-        if self.combo_tipo_periodo.get() == "Anos":
-            meses = max(1, int(round(periodo_raw * 12)))
-        else:
-            meses = max(1, int(round(periodo_raw)))
+        try:
+            # Conversão de prazo em meses com proteção contra período fracionário menor que 1 mês
+            if self.combo_tipo_periodo.get() == "Anos":
+                meses = max(1, int(round(periodo_raw * 12)))
+            else:
+                meses = max(1, int(round(periodo_raw)))
 
-        # Proteção contra DoS / Estouro de memória (máximo 1200 meses = 100 anos)
-        if meses > MAX_SIMULATION_MONTHS:
-            meses = MAX_SIMULATION_MONTHS
-            messagebox.showwarning("Aviso de Prazo", f"O prazo máximo para projeção foi ajustado para 100 anos ({MAX_SIMULATION_MONTHS} meses).")
+            # Proteção contra DoS / Estouro de memória (máximo 1200 meses = 100 anos)
+            if meses > MAX_SIMULATION_MONTHS:
+                meses = MAX_SIMULATION_MONTHS
+                messagebox.showwarning("Aviso de Prazo", f"O prazo máximo para projeção foi ajustado para 100 anos ({MAX_SIMULATION_MONTHS} meses).")
 
-        # Estratégia de rendimento
-        if "CDI" in self.combo_estrategia.get():
-            try:
-                cdi_base = float(self.entry_cdi_base.get().strip().replace(",", "."))
-                if cdi_base <= 0 or cdi_base > 100:
-                    raise ValueError("A taxa CDI base deve estar entre 0 e 100.")
-            except ValueError:
-                messagebox.showerror(
-                    "Erro de Valor",
-                    "Digite um valor válido para a Taxa CDI Base (ex: 10.75)."
-                )
-                return
-            strategy = CDIStrategy(cdi_percentage=taxa_raw, cdi_annual_rate=cdi_base, use_effective_rate=True)
-        else:
-            is_annual = self.combo_periodo_taxa.get() == "% ao ano"
-            strategy = CompoundInterestStrategy(rate_percent=taxa_raw, is_annual=is_annual, use_effective_rate=True)
+            # Estratégia de rendimento
+            if "CDI" in self.combo_estrategia.get():
+                try:
+                    cdi_base = self._parse_percent(self.entry_cdi_base.get())
+                    if cdi_base <= 0 or cdi_base > 100:
+                        raise ValueError("A taxa CDI base deve estar entre 0 e 100.")
+                except ValueError:
+                    messagebox.showerror(
+                        "Erro de Valor",
+                        "Digite um valor válido para a Taxa CDI Base (ex: 10.75)."
+                    )
+                    return
+                strategy = CDIStrategy(cdi_percentage=taxa_raw, cdi_annual_rate=cdi_base, use_effective_rate=True)
+            else:
+                is_annual = self.combo_periodo_taxa.get() == "% ao ano"
+                strategy = CompoundInterestStrategy(rate_percent=taxa_raw, is_annual=is_annual, use_effective_rate=True)
 
-        params = SimulationParams(
-            initial_amount=inicial,
-            monthly_contribution=mensal,
-            total_months=meses,
-            target_amount=meta_val
-        )
+            params = SimulationParams(
+                initial_amount=inicial,
+                monthly_contribution=mensal,
+                total_months=meses,
+                target_amount=meta_val
+            )
 
-        resultado = self.service.simulate(params, strategy)
+            resultado = self.service.simulate(params, strategy)
+        except ValueError as exc:
+            messagebox.showerror("Erro de Simulação", str(exc))
+            return
+        except Exception as exc:
+            messagebox.showerror(
+                "Erro Inesperado",
+                f"Ocorreu um erro inesperado durante a simulação: {exc}"
+            )
+            return
 
         # Percentual de ganho gerado por juros
         pct_ganho = (resultado.total_interest / resultado.total_invested * 100) if resultado.total_invested > 0 else 0

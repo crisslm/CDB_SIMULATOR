@@ -5,6 +5,7 @@ Princípio SOLID: Single Responsibility Principle (SRP)
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import List, Optional
 
 
@@ -46,6 +47,8 @@ class SimulationParams:
     monthly_contribution: float
     total_months: int
     target_amount: float = 1_000_000.0
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 
 @dataclass(frozen=True)

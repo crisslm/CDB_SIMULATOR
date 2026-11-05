@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Optional
 
 import customtkinter as ctk
 
@@ -44,7 +45,14 @@ class CategoryDialog(ctk.CTkToplevel):
         self.geometry("580x620"); self.minsize(440, 480)
         self.configure(fg_color=self.palette["bg_root"])
         self.transient(dashboard.winfo_toplevel()); self.grab_set()
+        # Limpa a referência no dashboard quando a janela for fechada (incluindo o botão X)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build()
+
+    def _on_close(self):
+        """Fecha o diálogo e limpa a referência no dashboard."""
+        self.dashboard._clear_category_dialog_ref()
+        self.destroy()
 
     def _input(self, master, placeholder=""):
         return ctk.CTkEntry(master, placeholder_text=placeholder, height=36, corner_radius=10,
@@ -75,12 +83,21 @@ class CategoryDialog(ctk.CTkToplevel):
         for child in self.list_frame.winfo_children(): child.destroy()
         for category in self.service.categories(active_only=False):
             state = "" if category.active else " · arquivada"
-            row = ctk.CTkFrame(self.list_frame, fg_color=self.palette["surface"], corner_radius=10, border_width=1, border_color=self.palette["border"])
-            row.pack(fill="x", pady=3)
-            ctk.CTkLabel(row, text="●", text_color=category.color, font=("Segoe UI", 18)).pack(side="left", padx=(10, 4))
-            ctk.CTkLabel(row, text=f"{category.name}{state}\n{category.transaction_type.label}", justify="left", anchor="w", text_color=self.palette["text"], font=("Segoe UI", 12)).pack(side="left", fill="x", expand=True, pady=7)
-            ctk.CTkButton(row, text="Editar", width=54, height=28, corner_radius=9, fg_color=self.palette["surface_input"], hover_color=self.palette["border_input"], text_color=self.palette["text"], command=lambda item=category: self._edit(item)).pack(side="right", padx=3)
-            ctk.CTkButton(row, text="Remover", width=72, height=28, corner_radius=9, fg_color="#D9534F", hover_color="#B94440", command=lambda item=category: self._delete(item)).pack(side="right", padx=(3, 9))
+            is_editing = self.edit_id == category.id
+            if is_editing:
+                row = ctk.CTkFrame(self.list_frame, fg_color=self.palette["accent"], corner_radius=10, border_width=1, border_color=self.palette["accent_text"])
+                row.pack(fill="x", pady=3)
+                ctk.CTkLabel(row, text="●", text_color="#FFFFFF", font=("Segoe UI", 18)).pack(side="left", padx=(10, 4))
+                ctk.CTkLabel(row, text=f"{category.name}{state}\n{category.transaction_type.label}", justify="left", anchor="w", text_color="#FFFFFF", font=("Segoe UI", 12)).pack(side="left", fill="x", expand=True, pady=7)
+                ctk.CTkButton(row, text="Editar", width=54, height=28, corner_radius=9, fg_color=self.palette["accent_text"], hover_color=self.palette["accent_bg"], text_color="#FFFFFF", command=lambda item=category: self._edit(item)).pack(side="right", padx=3)
+                ctk.CTkButton(row, text="Remover", width=72, height=28, corner_radius=9, fg_color="#D9534F", hover_color="#B94440", text_color="#FFFFFF", command=lambda item=category: self._delete(item)).pack(side="right", padx=(3, 9))
+            else:
+                row = ctk.CTkFrame(self.list_frame, fg_color=self.palette["surface"], corner_radius=10, border_width=1, border_color=self.palette["border"])
+                row.pack(fill="x", pady=3)
+                ctk.CTkLabel(row, text="●", text_color=category.color, font=("Segoe UI", 18)).pack(side="left", padx=(10, 4))
+                ctk.CTkLabel(row, text=f"{category.name}{state}\n{category.transaction_type.label}", justify="left", anchor="w", text_color=self.palette["text"], font=("Segoe UI", 12)).pack(side="left", fill="x", expand=True, pady=7)
+                ctk.CTkButton(row, text="Editar", width=54, height=28, corner_radius=9, fg_color=self.palette["surface_input"], hover_color=self.palette["border_input"], text_color=self.palette["text"], command=lambda item=category: self._edit(item)).pack(side="right", padx=3)
+                ctk.CTkButton(row, text="Remover", width=72, height=28, corner_radius=9, fg_color="#D9534F", hover_color="#B94440", command=lambda item=category: self._delete(item)).pack(side="right", padx=(3, 9))
 
     def _edit(self, category):
         self.edit_id = category.id; self.name_entry.delete(0, "end"); self.name_entry.insert(0, category.name)
@@ -91,6 +108,7 @@ class CategoryDialog(ctk.CTkToplevel):
                 self.color_combo.set(name)
                 break
         self.save_button.configure(text="Salvar")
+        self._render_list()
 
     def _save(self):
         try:
@@ -121,6 +139,9 @@ class FinancialDashboard(ctk.CTkFrame):
         self.service, self.palette = service, palette
         self.editing_id: int | None = None
         self._form_categories = {}; self._filter_categories = {"Todas as categorias": None}
+        self._history_rows: list = []
+        self._category_dialog: Optional[CategoryDialog] = None
+        self._editing_transaction_id: Optional[int] = None
         self._build(); self.refresh()
 
     def _entry(self, master, placeholder="", **kwargs):
@@ -149,7 +170,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.restore_button = PillButton(botoes, text="Restaurar", command=self._restore_database, variant="secondary", width=110)
         self.restore_button.pack(side="left", padx=(0, 6)); self.restore_button.apply_theme(self.palette)
 
-        self.manage_button = PillButton(top, text="Gerenciar categorias", command=lambda: CategoryDialog(self), variant="secondary", width=185)
+        self.manage_button = PillButton(top, text="Gerenciar categorias", command=self._open_category_dialog, variant="secondary", width=185)
         self.manage_button.pack(side="right"); self.manage_button.apply_theme(self.palette)
         ctk.CTkLabel(self, text="Acompanhe receitas, despesas e aportes em um só lugar.", font=("Segoe UI", 12), text_color=self.palette["text_muted"]).pack(anchor="w", pady=(0, 12))
 
@@ -188,6 +209,19 @@ class FinancialDashboard(ctk.CTkFrame):
         ctk.CTkLabel(self.history_card, text="Histórico de movimentações", font=("Segoe UI", 15, "bold"), text_color=self.palette["text"]).pack(anchor="w", padx=14, pady=(12, 6))
         self.history = ctk.CTkScrollableFrame(self.history_card, fg_color="transparent", height=240); self.history.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.apply_layout(1200)
+
+    def _open_category_dialog(self):
+        """Abre o diálogo de gerenciamento de categorias (singleton: não abre múltiplas janelas)."""
+        if self._category_dialog is not None and self._category_dialog.winfo_exists():
+            self._category_dialog.focus()
+            return
+        self._category_dialog = CategoryDialog(self)
+        # Limpa a referência quando o diálogo for destruído
+        self._category_dialog.bind("<Destroy>", lambda _: self._clear_category_dialog_ref())
+
+    def _clear_category_dialog_ref(self):
+        """Limpa a referência do diálogo de categorias quando ele é fechado."""
+        self._category_dialog = None
 
     def _backup_database(self):
         """Copia os arquivos criptografados (.enc + .db_key) para uma pasta escolhida pelo usuário."""
@@ -280,31 +314,108 @@ class FinancialDashboard(ctk.CTkFrame):
     def refresh(self):
         try:
             self._refresh_filter_categories()
-            transactions = self.service.transactions(**self._filters())
+            filters = self._filters()
+            # Consulta agregações diretamente via SQL (evita carregar todas as transações para o Python)
+            summary = self.service.summary_sql(**filters)
+            # Métodos de despesa já filtram por EXPENSE internamente, não precisam de transaction_type
+            expense_filters = {k: v for k, v in filters.items() if k != "transaction_type"}
+            allocation = self.service.allocation_sql(**expense_filters)
+            expense_by_category = self.service.expense_by_category_sql(**expense_filters)
+            monthly_expenses = self.service.monthly_expenses_sql(**expense_filters)
+            # Carrega transações apenas para o histórico detalhado
+            transactions = self.service.transactions(**filters)
         except ValueError as exc:
             messagebox.showerror("Filtros", str(exc), parent=self.winfo_toplevel()); return
-        summary = self.service.summary_for(transactions)
         values = [format_cents(summary.income_cents), format_cents(summary.expense_cents), format_cents(summary.investment_cents), format_cents(summary.available_balance_cents), f"{summary.investment_rate:.1f}%".replace(".", ",")]
         for card, value in zip(self.cards, values): card.update_value(value)
-        self.fin_charts.plot_donut(self.service.allocation(transactions))
-        self.fin_charts.plot_bars(self.service.expense_by_category(transactions), self.service.monthly_expenses(transactions), self.chart_mode.get())
+        self.fin_charts.plot_donut(allocation)
+        self.fin_charts.plot_bars(expense_by_category, monthly_expenses, self.chart_mode.get())
         self._render_history(transactions)
 
     def _render_history(self, transactions: list[FinancialTransaction]):
-        for child in self.history.winfo_children(): child.destroy()
-        if not transactions:
-            ctk.CTkLabel(self.history, text="Nenhuma movimentação encontrada neste período.", text_color=self.palette["text_muted"]).pack(pady=22)
-            return
-        for item in transactions:
+        # Reutiliza widgets de linha existentes em vez de destruir/recriar tudo
+        existing = getattr(self, "_history_rows", [])
+        needed = len(transactions)
+
+        # Cria widgets extras se não houver suficientes
+        while len(existing) < needed:
             row = ctk.CTkFrame(self.history, fg_color=self.palette["surface_input"], corner_radius=10)
             row.pack(fill="x", padx=3, pady=3)
-            sign = "+" if item.transaction_type == TransactionType.INCOME else "−"
-            amount_color = self.palette["accent"] if item.transaction_type == TransactionType.INCOME else self.palette["text"]
-            ctk.CTkLabel(row, text="●", text_color=item.category_color or self.palette["text_muted"], font=("Segoe UI", 17)).pack(side="left", padx=(9, 4))
-            ctk.CTkLabel(row, text=f"{item.description}\n{item.category_name} · {item.occurred_on.strftime('%d/%m/%Y')}", anchor="w", justify="left", text_color=self.palette["text"], font=("Segoe UI", 12)).pack(side="left", fill="x", expand=True, pady=7)
-            ctk.CTkLabel(row, text=f"{sign} {format_cents(item.amount_cents)}", text_color=amount_color, font=("Segoe UI", 12, "bold")).pack(side="left", padx=8)
-            ctk.CTkButton(row, text="Editar", width=52, height=27, corner_radius=8, fg_color="transparent", hover_color=self.palette["border_input"], text_color=self.palette["text"], command=lambda record=item: self._start_edit(record)).pack(side="left", padx=2)
-            ctk.CTkButton(row, text="×", width=27, height=27, corner_radius=8, fg_color="transparent", hover_color="#B94440", text_color=self.palette["text_muted"], command=lambda record=item: self._delete_transaction(record)).pack(side="left", padx=(2, 8))
+
+            dot = ctk.CTkLabel(row, text="●", font=("Segoe UI", 17))
+            dot.pack(side="left", padx=(9, 4))
+
+            info = ctk.CTkLabel(row, anchor="w", justify="left", text_color=self.palette["text"], font=("Segoe UI", 12))
+            info.pack(side="left", fill="x", expand=True, pady=7)
+
+            amount = ctk.CTkLabel(row, font=("Segoe UI", 12, "bold"))
+            amount.pack(side="left", padx=8)
+
+            edit_indicator = ctk.CTkLabel(row, text="✏️ Editando", font=("Segoe UI", 10), text_color=self.palette["accent"])
+            edit_indicator.pack(side="right", padx=8)
+            edit_indicator.pack_forget()  # começa escondido
+
+            btn_edit = ctk.CTkButton(
+                row, text="Editar", width=52, height=27, corner_radius=8,
+                fg_color=self.palette["surface_input"], hover_color=self.palette["border_input"],
+                text_color=self.palette["text"],
+            )
+            btn_edit.pack(side="left", padx=2)
+
+            btn_del = ctk.CTkButton(
+                row, text="×", width=27, height=27, corner_radius=8,
+                fg_color="transparent", hover_color="#B94440",
+                text_color=self.palette["text_muted"],
+            )
+            btn_del.pack(side="left", padx=(2, 8))
+
+            existing.append({
+                "row": row, "dot": dot, "info": info, "amount": amount,
+                "btn_edit": btn_edit, "btn_del": btn_del,
+                "edit_indicator": edit_indicator,
+            })
+
+        # Oculta sobrantes quando há menos transações que widgets
+        for extra in existing[needed:]:
+            extra["row"].pack_forget()
+
+        if not transactions:
+            if not existing:
+                ctk.CTkLabel(self.history, text="Nenhuma movimentação encontrada neste período.", text_color=self.palette["text_muted"]).pack(pady=22)
+            return
+
+        # Atualiza apenas as linhas necessárias
+        for index, item in enumerate(existing[:needed]):
+            tx = transactions[index]
+            is_editing = self._editing_transaction_id == tx.id
+            sign = "+" if tx.transaction_type == TransactionType.INCOME else "−"
+            amount_color = self.palette["accent"] if tx.transaction_type == TransactionType.INCOME else self.palette["text"]
+            item["row"].pack(fill="x", padx=3, pady=3)
+            # Destaque visual na linha que está sendo editada (cores invertidas para contraste)
+            if is_editing:
+                item["row"].configure(fg_color=self.palette["accent"])  # fundo verde/acento
+                item["row"].configure(border_width=2, border_color=self.palette["accent_text"])
+                item["edit_indicator"].configure(text="✏️ Editando", text_color=self.palette["accent_text"])
+                item["edit_indicator"].pack(side="right", padx=8)
+                # Inverte cores do texto para ficar legível sobre o fundo escuro
+                item["dot"].configure(text_color="#FFFFFF")
+                item["info"].configure(text=f"{tx.description}\n{tx.category_name} · {tx.occurred_on.strftime('%d/%m/%Y')}", text_color="#FFFFFF")
+                item["amount"].configure(text=f"{sign} {format_cents(tx.amount_cents)}", text_color="#FFFFFF")
+                # Botão Editar com cores invertidas no modo edição
+                item["btn_edit"].configure(fg_color=self.palette["accent_text"], text_color="#FFFFFF")
+            else:
+                item["row"].configure(fg_color=self.palette["surface_input"])
+                item["row"].configure(border_width=0)
+                item["edit_indicator"].pack_forget()
+                item["dot"].configure(text_color=tx.category_color or self.palette["text_muted"])
+                item["info"].configure(text=f"{tx.description}\n{tx.category_name} · {tx.occurred_on.strftime('%d/%m/%Y')}", text_color=self.palette["text"])
+                item["amount"].configure(text=f"{sign} {format_cents(tx.amount_cents)}", text_color=amount_color)
+                # Botão Editar com cores normais (igual ao de gerenciar categoria)
+                item["btn_edit"].configure(fg_color=self.palette["surface_input"], text_color=self.palette["text"])
+            item["btn_edit"].configure(command=lambda record=tx: self._start_edit(record))
+            item["btn_del"].configure(command=lambda record=tx: self._delete_transaction(record))
+
+        self._history_rows = existing
 
     def _save_transaction(self):
         try:
@@ -317,16 +428,21 @@ class FinancialDashboard(ctk.CTkFrame):
         except ValueError as exc: messagebox.showerror("Lançamento", str(exc), parent=self.winfo_toplevel())
 
     def _start_edit(self, item: FinancialTransaction):
-        self.editing_id = item.id; self.transaction_type.set(item.transaction_type.label); self._refresh_form_categories()
+        self.editing_id = item.id
+        self._editing_transaction_id = item.id
+        self.transaction_type.set(item.transaction_type.label); self._refresh_form_categories()
         for entry, value in ((self.description, item.description), (self.amount, f"{item.amount_cents / 100:.2f}".replace(".", ",")), (self.occurred_on, item.occurred_on.strftime("%d/%m/%Y")), (self.notes, item.notes)):
             entry.delete(0, "end"); entry.insert(0, value)
         self.category.set(item.category_name); self.save_transaction.configure(text="Salvar"); self.cancel_edit.grid(); self.form_card.focus_set()
+        self.refresh()
 
     def _clear_form(self):
         self.editing_id = None
+        self._editing_transaction_id = None
         for entry in (self.description, self.amount, self.notes): entry.delete(0, "end")
         self.occurred_on.delete(0, "end"); self.occurred_on.insert(0, date.today().strftime("%d/%m/%Y"))
         self._refresh_form_categories(); self.save_transaction.configure(text="Adicionar"); self.cancel_edit.grid_remove()
+        self.refresh()
 
     def _delete_transaction(self, item):
         if messagebox.askyesno("Excluir lançamento", f"Excluir '{item.description}'? Esta ação não pode ser desfeita.", parent=self.winfo_toplevel()):
