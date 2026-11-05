@@ -28,13 +28,19 @@ Versão: 1.0.0
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _Path
 from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Optional
 
+# Garante que o pacote src seja importável como pacote absoluto
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
+
 import customtkinter as ctk
 
+from src.i18n.manager import t
 from ....domain.financial_models import FinancialTransaction, TransactionType
 from ....services.financial_service import FinancialService, format_cents, parse_br_date
 from ..components import MetricCard, PillButton
@@ -522,7 +528,7 @@ class FinancialDashboard(ctk.CTkFrame):
         top = ctk.CTkFrame(self, fg_color="transparent")
         top.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(
-            top, text="Controle Financeiro",
+            top, text=t("financial.title"),
             font=("Segoe UI", 21, "bold"),
             text_color=self.palette["text"]
         ).pack(side="left")
@@ -531,28 +537,28 @@ class FinancialDashboard(ctk.CTkFrame):
         botoes.pack(side="right")
 
         self.backup_button = PillButton(
-            botoes, text="Backup",
+            botoes, text=t("financial.button.backup"),
             command=self._backup_database, variant="secondary", width=100
         )
         self.backup_button.pack(side="left", padx=(0, 6))
         self.backup_button.apply_theme(self.palette)
 
         self.restore_button = PillButton(
-            botoes, text="Restaurar",
+            botoes, text=t("financial.button.restore"),
             command=self._restore_database, variant="secondary", width=110
         )
         self.restore_button.pack(side="left", padx=(0, 6))
         self.restore_button.apply_theme(self.palette)
 
         self.manage_button = PillButton(
-            top, text="Gerenciar categorias",
+            top, text=t("financial.button.manage"),
             command=self._open_category_dialog, variant="secondary", width=185
         )
         self.manage_button.pack(side="right")
         self.manage_button.apply_theme(self.palette)
 
         ctk.CTkLabel(
-            self, text="Acompanhe receitas, despesas e aportes em um só lugar.",
+            self, text=t("financial.subtitle"),
             font=("Segoe UI", 12), text_color=self.palette["text_muted"]
         ).pack(anchor="w", pady=(0, 12))
 
@@ -563,7 +569,7 @@ class FinancialDashboard(ctk.CTkFrame):
         filters.grid_columnconfigure(4, weight=1)
 
         ctk.CTkLabel(
-            filters, text="PERÍODO",
+            filters, text=t("financial.filter.period"),
             font=("Segoe UI", 10, "bold"),
             text_color=self.palette["text_muted"]
         ).grid(row=0, column=0, padx=(12, 4), pady=10)
@@ -578,7 +584,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.custom_end = self._entry(filters, "Fim DD/MM/AAAA", width=135)
 
         ctk.CTkLabel(
-            filters, text="TIPO",
+            filters, text=t("financial.filter.type"),
             font=("Segoe UI", 10, "bold"),
             text_color=self.palette["text_muted"]
         ).grid(row=0, column=2, padx=(12, 4), pady=10)
@@ -596,7 +602,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.filter_category.grid(row=0, column=4, padx=4, pady=10, sticky="w")
 
         self.filter_button = PillButton(
-            filters, text="Aplicar",
+            filters, text=t("financial.filter.apply"),
             command=self.refresh, variant="secondary", width=78
         )
         self.filter_button.grid(row=0, column=5, padx=(4, 12), pady=10)
@@ -606,18 +612,18 @@ class FinancialDashboard(ctk.CTkFrame):
         self.metrics = ctk.CTkFrame(self, fg_color="transparent")
         self.metrics.pack(fill="x", pady=(0, 10))
         self.cards = [
-            MetricCard(self.metrics, "Receitas", "R$ 0,00"),
-            MetricCard(self.metrics, "Despesas", "R$ 0,00"),
-            MetricCard(self.metrics, "Investimentos", "R$ 0,00"),
-            MetricCard(self.metrics, "Saldo disponível", "R$ 0,00", is_highlight=True),
-            MetricCard(self.metrics, "Taxa investida", "0,0%"),
+            MetricCard(self.metrics, t("financial.card.income"), "R$ 0,00"),
+            MetricCard(self.metrics, t("financial.card.expense"), "R$ 0,00"),
+            MetricCard(self.metrics, t("financial.card.investment"), "R$ 0,00"),
+            MetricCard(self.metrics, t("financial.card.balance"), "R$ 0,00", is_highlight=True),
+            MetricCard(self.metrics, t("financial.card.rate"), "0,0%"),
         ]
 
         # Formulário de novo lançamento
         self.form_card = self._card(self)
         self.form_card.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(
-            self.form_card, text="Novo lançamento",
+            self.form_card, text=t("financial.form.new"),
             font=("Segoe UI", 15, "bold"),
             text_color=self.palette["text"]
         ).grid(row=0, column=0, columnspan=6, sticky="w", padx=14, pady=(12, 8))
@@ -668,7 +674,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.bar_card = self._card(self.charts)
 
         ctk.CTkLabel(
-            self.donut_card, text="Destino do dinheiro",
+            self.donut_card, text=t("financial.chart.donut.title"),
             font=("Segoe UI", 14, "bold"),
             text_color=self.palette["text"]
         ).pack(anchor="w", padx=14, pady=(12, 0))
@@ -677,10 +683,10 @@ class FinancialDashboard(ctk.CTkFrame):
         bar_head.pack(fill="x", padx=14, pady=(12, 0))
 
         self.chart_mode = self._combo(
-            bar_head, ["Por categoria", "Evolução mensal"],
+            bar_head, [t("financial.chart.mode.category"), t("financial.chart.mode.monthly")],
             lambda _: self.refresh(), width=155
         )
-        self.chart_mode.set("Por categoria")
+        self.chart_mode.set(t("financial.chart.mode.category"))
         self.chart_mode.pack(side="right")
 
         self.fin_charts = FinancialCharts(self.donut_card, self.bar_card, self.palette)
@@ -689,7 +695,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.history_card = self._card(self)
         self.history_card.pack(fill="both", expand=True)
         ctk.CTkLabel(
-            self.history_card, text="Histórico de movimentações",
+            self.history_card, text=t("financial.history.title"),
             font=("Segoe UI", 15, "bold"),
             text_color=self.palette["text"]
         ).pack(anchor="w", padx=14, pady=(12, 6))

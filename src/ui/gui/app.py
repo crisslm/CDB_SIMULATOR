@@ -11,6 +11,7 @@ construída com CustomTkinter. É responsável por:
     4. Validar entradas do usuário e disparar simulações via Casos de Uso.
     5. Gerenciar layout responsivo (mobile/desktop).
     6. Gerenciar tema claro/escuro com persistência.
+    7. Gerenciar internacionalização (i18n) da interface.
 
 Arquitetura:
     - Herda de ctk.CTk (janela principal do CustomTkinter).
@@ -23,16 +24,22 @@ Princípio SOLID: Dependency Inversion Principle (DIP)
 - Depende de abstrações (casos de uso), não de implementações concretas.
 
 Autor: CDB Simulator
-Versão: 1.0.0
+Versão: 1.1.0
 """
 
 import json
+import sys as _sys
 from pathlib import Path
 from typing import Optional
+
+# Garante que o pacote src seja importável como pacote absoluto
+# (útil quando executado via pytest a partir de tests/)
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import customtkinter as ctk
 from tkinter import messagebox
 
+from src.i18n.manager import t, set_language, get_language, get_translation_manager
 from ...domain.constants import LIMITE_MONETARIO
 from ...use_cases.simulate_investment import SimulateInvestmentUseCase, SimulationInput
 from ...use_cases.financial_use_cases import FinancialUseCases
@@ -60,6 +67,7 @@ class ModernAppGUI(ctk.CTk):
         - A área principal com cards de métricas e gráficos.
         - O dashboard financeiro (seção separada).
         - O gerenciamento de tema claro/escuro.
+        - O gerenciamento de idioma (i18n).
 
     Atributos de classe:
         BREAKPOINT_MOBILE (int): Largura em pixels abaixo da qual o layout
@@ -67,6 +75,8 @@ class ModernAppGUI(ctk.CTk):
         PALETTES (dict): Paletas de cores para temas Light e Dark.
         THEME_FILE (Path): Caminho do arquivo JSON que persiste a preferência
                            de tema do usuário.
+        LANGUAGE_FILE (Path): Caminho do arquivo JSON que persiste a preferência
+                              de idioma do usuário.
 
     Atributos de instância:
         simulator_use_case (SimulateInvestmentUseCase): Caso de uso de simulação.
@@ -74,6 +84,7 @@ class ModernAppGUI(ctk.CTk):
         active_section (str): Seção ativa ("simulator" ou "financial").
         is_mobile_layout (bool|None): Indica se está em layout mobile.
         theme_mode (str): "Light" ou "Dark".
+        language (str): Código do idioma atual (ex: "pt_BR", "en_US").
 
     Exemplo de uso:
         app = ModernAppGUI()
@@ -85,6 +96,7 @@ class ModernAppGUI(ctk.CTk):
     # Paletas de tema (Claro / Escuro) importadas de components/theme
     PALETTES = PALETTES
     THEME_FILE = Path.home() / ".cdb_simulator_theme.json"
+    LANGUAGE_FILE = Path.home() / ".cdb_simulator_language.json"
 
     def __init__(
         self,
@@ -100,12 +112,12 @@ class ModernAppGUI(ctk.CTk):
 
         Fluxo de inicialização:
             1. Configura casos de uso (injeção de dependência).
-            2. Carrega tema salvo ou usa "Light" como padrão.
+            2. Carrega tema e idioma salvos ou usa padrões.
             3. Configura janela (título, tamanho, mínimo).
             4. Constrói navegação, barra lateral e área principal.
             5. Cria o dashboard financeiro.
             6. Configura evento de redimensionamento.
-            7. Aplica layout inicial e tema.
+            7. Aplica layout inicial, tema e idioma.
         """
         super().__init__()
 
@@ -123,8 +135,12 @@ class ModernAppGUI(ctk.CTk):
         ctk.set_appearance_mode(self.theme_mode)
         self.configure(fg_color=self.PALETTES[self.theme_mode]["bg_root"])
 
+        # Carrega preferência de idioma salvo (padrão: pt_BR)
+        self.language = self._load_language()
+        set_language(self.language)
+
         # Configurações básicas da janela
-        self.title("CDB Simulator • Gestão & Rendimento")
+        self.title(t("app.title"))
         self.geometry("1160x780")  # Tamanho inicial
         self.minsize(360, 520)     # Suporte a janelas estreitas estilo mobile
 
@@ -155,7 +171,7 @@ class ModernAppGUI(ctk.CTk):
         # Monitora redimensionamento para layout responsivo
         self.bind("<Configure>", self._on_window_resize)
 
-        # Layout inicial e tema
+        # Layout inicial, tema e idioma
         self._apply_responsive_layout(1160)
         self._apply_theme(self.theme_mode)
 
@@ -198,14 +214,14 @@ class ModernAppGUI(ctk.CTk):
 
         self.nav_simulator = PillButton(
             self.frame_navigation,
-            text="Simulador CDB",
+            text=t("nav.simulator"),
             command=lambda: self._show_section("simulator"),
             variant="secondary",
             width=145,
         )
         self.nav_financial = PillButton(
             self.frame_navigation,
-            text="Controle Financeiro",
+            text=t("nav.financial"),
             command=lambda: self._show_section("financial"),
             variant="secondary",
             width=170,
@@ -281,6 +297,7 @@ class ModernAppGUI(ctk.CTk):
             6. Prazo (anos ou meses)
             7. Meta financeira
             8. Botão "Simular Rendimento"
+            9. Seletor de idioma
 
         Também configura listas de referências para atualização de tema.
         """
@@ -294,20 +311,21 @@ class ModernAppGUI(ctk.CTk):
 
         pal = self.PALETTES[self.theme_mode]
 
-        # Cabeçalho com título e botão de tema
+        # Cabeçalho com título, botão de tema e seletor de idioma
         frame_header = ctk.CTkFrame(self.frame_sidebar, fg_color="transparent")
         frame_header.pack(fill="x", padx=16, pady=(16, 12))
 
         self.lbl_header = ctk.CTkLabel(
             frame_header,
-            text="Configuração do Aporte",
+            text=t("sidebar.header"),
             font=("Segoe UI", 16, "bold"),
             text_color=pal["text"],
             anchor="w"
         )
         self.lbl_header.pack(side="left")
 
-        texto_tema = "☀️ Claro" if self.theme_mode == "Dark" else "🌙 Escuro"
+        # Botão de tema
+        texto_tema = t("nav.theme.dark") if self.theme_mode == "Dark" else t("nav.theme.light")
         self.btn_tema = PillButton(
             frame_header,
             text=texto_tema,
@@ -315,13 +333,35 @@ class ModernAppGUI(ctk.CTk):
             command=self._toggle_theme,
             width=120,
         )
-        self.btn_tema.pack(side="right", padx=(8, 0))
+        self.btn_tema.pack(side="right", padx=(8, 4))
         self.btn_tema.apply_theme(pal)
+
+        # Seletor de idioma
+        self.combo_idioma = ctk.CTkComboBox(
+            frame_header,
+            values=list(get_translation_manager().get_available_languages().values()),
+            width=120,
+            corner_radius=12,
+            height=30,
+            fg_color="#F2F2F7",
+            border_color="#E5E5EA",
+            button_color="#E5E5EA",
+            button_hover_color="#D1D1D6",
+            text_color="#1C1C1E",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_text_color="#1C1C1E",
+            command=self._on_language_change,
+        )
+        # Define o idioma atual no combo
+        idiomas = get_translation_manager().get_available_languages()
+        nome_atual = idiomas.get(self.language, "Português")
+        self.combo_idioma.set(nome_atual)
+        self.combo_idioma.pack(side="right", padx=(4, 0))
 
         # 1. Tipo de Rendimento / Estratégia
         lbl_estrategia = ctk.CTkLabel(
             self.frame_sidebar,
-            text="TIPO DE INVESTIMENTO",
+            text=t("sidebar.strategy.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -330,7 +370,7 @@ class ModernAppGUI(ctk.CTk):
 
         self.combo_estrategia = ctk.CTkComboBox(
             self.frame_sidebar,
-            values=["Taxa Prefixada (% a.a. / a.m.)", "Pós-fixado (% do CDI)"],
+            values=[t("sidebar.strategy.prefix"), t("sidebar.strategy.cdi")],
             command=self._on_strategy_change,
             corner_radius=12,
             height=38,
@@ -342,13 +382,13 @@ class ModernAppGUI(ctk.CTk):
             dropdown_fg_color="#FFFFFF",
             dropdown_text_color="#1C1C1E"
         )
-        self.combo_estrategia.set("Taxa Prefixada (% a.a. / a.m.)")
+        self.combo_estrategia.set(t("sidebar.strategy.prefix"))
         self.combo_estrategia.pack(fill="x", padx=16, pady=(0, 12))
 
         # 2. Valor Inicial
         lbl_inicial = ctk.CTkLabel(
             self.frame_sidebar,
-            text="VALOR INICIAL (R$)",
+            text=t("sidebar.initial.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -369,7 +409,7 @@ class ModernAppGUI(ctk.CTk):
         # 3. Aporte Mensal
         lbl_mensal = ctk.CTkLabel(
             self.frame_sidebar,
-            text="APORTE MENSAL (R$)",
+            text=t("sidebar.monthly.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -390,7 +430,7 @@ class ModernAppGUI(ctk.CTk):
         # 4. Taxa de Juros / Percentual CDI
         self.lbl_taxa = ctk.CTkLabel(
             self.frame_sidebar,
-            text="TAXA DE RENDIMENTO (%)",
+            text=t("sidebar.rate.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -432,7 +472,7 @@ class ModernAppGUI(ctk.CTk):
         self.frame_cdi_base = ctk.CTkFrame(self.frame_sidebar, fg_color="transparent")
         self.lbl_cdi_base = ctk.CTkLabel(
             self.frame_cdi_base,
-            text="CDI ANUAL BASE (% a.a.)",
+            text=t("sidebar.cdi_base.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -452,7 +492,7 @@ class ModernAppGUI(ctk.CTk):
         # 5. Tempo / Período
         lbl_periodo = ctk.CTkLabel(
             self.frame_sidebar,
-            text="PRAZO DE INVESTIMENTO",
+            text=t("sidebar.period.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -475,7 +515,7 @@ class ModernAppGUI(ctk.CTk):
 
         self.combo_tipo_periodo = ctk.CTkComboBox(
             frame_periodo,
-            values=["Anos", "Meses"],
+            values=[t("sidebar.period.years"), t("sidebar.period.months")],
             width=115,
             corner_radius=12,
             height=38,
@@ -487,13 +527,13 @@ class ModernAppGUI(ctk.CTk):
             dropdown_fg_color="#FFFFFF",
             dropdown_text_color="#1C1C1E"
         )
-        self.combo_tipo_periodo.set("Anos")
+        self.combo_tipo_periodo.set(t("sidebar.period.years"))
         self.combo_tipo_periodo.pack(side="right")
 
         # 6. Meta Desejada
         lbl_meta = ctk.CTkLabel(
             self.frame_sidebar,
-            text="OBJETIVO / META (R$)",
+            text=t("sidebar.target.label"),
             font=("Segoe UI", 11, "bold"),
             text_color="#8E8E93",
             anchor="w"
@@ -514,7 +554,7 @@ class ModernAppGUI(ctk.CTk):
         # Botão Principal - dispara a simulação
         self.btn_simular = PillButton(
             self.frame_sidebar,
-            text="Simular Rendimento",
+            text=t("sidebar.simulate.button"),
             variant="primary",
             command=self.on_simulate_click
         )
@@ -534,6 +574,7 @@ class ModernAppGUI(ctk.CTk):
             self.combo_estrategia,
             self.combo_periodo_taxa,
             self.combo_tipo_periodo,
+            self.combo_idioma,
         ]
         self._labels_muted = [
             lbl_estrategia,
@@ -584,7 +625,7 @@ class ModernAppGUI(ctk.CTk):
         self.lbl_header.configure(text_color=pal["text"])
         self.lbl_section.configure(text_color=pal["text"])
         self.btn_tema.configure(
-            text="☀️ Claro" if modo == "Dark" else "🌙 Escuro"
+            text=t("nav.theme.dark") if modo == "Dark" else t("nav.theme.light")
         )
         for lbl in self._labels_muted:
             lbl.configure(text_color=pal["text_muted"])
@@ -648,6 +689,170 @@ class ModernAppGUI(ctk.CTk):
             pass
 
     # -------------------------------------------------------------------------
+    # Idioma (i18n)
+    # -------------------------------------------------------------------------
+
+    def _load_language(self) -> str:
+        """
+        Carrega o idioma salvo no arquivo de preferência.
+
+        Retorna:
+            str: Código do idioma (ex: "pt_BR", "en_US"). Padrão: "pt_BR".
+        """
+        try:
+            dados = json.loads(self.LANGUAGE_FILE.read_text(encoding="utf-8"))
+            idioma = dados.get("language", "pt_BR")
+            return idioma if idioma in get_translation_manager().get_available_languages() else "pt_BR"
+        except Exception:
+            return "pt_BR"
+
+    def _save_language(self):
+        """
+        Salva a preferência de idioma atual em arquivo JSON.
+        """
+        try:
+            self.LANGUAGE_FILE.write_text(
+                json.dumps({"language": self.language}), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    def _on_language_change(self, nome_idioma: str):
+        """
+        Altera o idioma da interface quando o usuário seleciona um novo idioma.
+
+        Parâmetros:
+            nome_idioma (str): Nome nativo do idioma selecionado (ex: "English").
+        """
+        # Encontra o código do idioma pelo nome nativo
+        idiomas = get_translation_manager().get_available_languages()
+        codigo_idioma = None
+        for codigo, nome in idiomas.items():
+            if nome == nome_idioma:
+                codigo_idioma = codigo
+                break
+
+        if codigo_idioma and codigo_idioma != self.language:
+            self.language = codigo_idioma
+            set_language(codigo_idioma)
+            self._save_language()
+            self._rebuild_ui_texts()
+
+    def _rebuild_ui_texts(self):
+        """
+        Reaplica todos os textos da interface no novo idioma.
+
+        Atualiza labels, botões, placeholders e títulos conforme o idioma
+        atualmente selecionado. Não reexecuta a simulação.
+        """
+        # Título da janela
+        self.title(t("app.title"))
+
+        # Navegação
+        self.nav_simulator.configure(text=t("nav.simulator"))
+        self.nav_financial.configure(text=t("nav.financial"))
+
+        # Cabeçalho da sidebar
+        self.lbl_header.configure(text=t("sidebar.header"))
+
+        # Botão de tema
+        texto_tema = t("nav.theme.dark") if self.theme_mode == "Dark" else t("nav.theme.light")
+        self.btn_tema.configure(text=texto_tema)
+
+        # Seletor de idioma - atualizar seleção atual
+        idiomas = get_translation_manager().get_available_languages()
+        nome_atual = idiomas.get(self.language, "Português")
+        self.combo_idioma.set(nome_atual)
+
+        # Estratégia
+        self.lbl_estrategia = None  # já existe, vamos atualizar via labels_muted
+        # Reconstroi valores do combo de estratégia
+        self.combo_estrategia.configure(values=[t("sidebar.strategy.prefix"), t("sidebar.strategy.cdi")])
+        # Mantém a seleção atual traduzindo de volta
+        atual = self.combo_estrategia.get()
+        if "CDI" in atual or "CDI" in t("sidebar.strategy.cdi"):
+            self.combo_estrategia.set(t("sidebar.strategy.cdi"))
+        else:
+            self.combo_estrategia.set(t("sidebar.strategy.prefix"))
+
+        # Labels de campos
+        self.lbl_inicial = None
+        self.lbl_mensal = None
+        self.lbl_taxa.configure(text=t("sidebar.rate.label"))
+        self.lbl_cdi_base.configure(text=t("sidebar.cdi_base.label"))
+        self.lbl_periodo = None
+        self.lbl_meta = None
+
+        # Atualiza labels muted (precisamos recriar ou acessar diretamente)
+        # Para simplificar, atualizamos os labels conhecidos
+        for lbl in self._labels_muted:
+            # Cada label tem um texto específico; mapeamos por conteúdo aproximado
+            texto_atual = lbl.cget("text")
+            novo_texto = self._traduzir_label_sidebar(texto_atual)
+            lbl.configure(text=novo_texto)
+
+        # Placeholder dos campos de entrada (CustomTkinter usa placeholder_text)
+        # Não temos placeholders nos entries atuais, então pulamos
+
+        # Botão simular
+        self.btn_simular.configure(text=t("sidebar.simulate.button"))
+
+        # Combo de período da taxa
+        # Mantém valores em português/inglês conforme contexto (não traduzido no JSON)
+        # O combo de período da taxa usa valores fixos "% ao ano" / "% ao mês"
+        # que são específicos do Brasil; mantemos como estão ou traduzimos
+
+        # Combo de tipo de período (Anos/Meses)
+        self.combo_tipo_periodo.configure(values=[t("sidebar.period.years"), t("sidebar.period.months")])
+        atual_periodo = self.combo_tipo_periodo.get()
+        if atual_periodo in ["Anos", "Years"]:
+            self.combo_tipo_periodo.set(t("sidebar.period.years"))
+        elif atual_periodo in ["Meses", "Months"]:
+            self.combo_tipo_periodo.set(t("sidebar.period.months"))
+
+        # Título da seção principal
+        if hasattr(self, "lbl_section"):
+            self.lbl_section.configure(text=t("app.section.title"))
+
+        # Atualiza cards se existirem
+        if hasattr(self, "cards_list"):
+            # Os cards serão atualizados na próxima simulação
+            pass
+
+        # Atualiza dashboard financeiro se existir
+        if hasattr(self, "financial_dashboard"):
+            self.financial_dashboard.apply_theme(self.PALETTES[self.theme_mode])
+            self.financial_dashboard.refresh()
+
+        # Persiste idioma
+        self._save_language()
+
+    def _traduzir_label_sidebar(self, texto_atual: str) -> str:
+        """
+        Mapeia um texto de label da sidebar para a chave de tradução correspondente.
+
+        Como os labels são criados com textos hardcoded originalmente, este método
+        faz o mapeamento reverso para atualizar quando o idioma muda.
+
+        Parâmetros:
+            texto_atual (str): Texto atual do label.
+
+        Retorna:
+            str: Texto traduzido.
+        """
+        mapeamento = {
+            "TIPO DE INVESTIMENTO": t("sidebar.strategy.label"),
+            "VALOR INICIAL (R$)": t("sidebar.initial.label"),
+            "APORTE MENSAL (R$)": t("sidebar.monthly.label"),
+            "TAXA DE RENDIMENTO (%)": t("sidebar.rate.label"),
+            "PRAZO DE INVESTIMENTO": t("sidebar.period.label"),
+            "OBJETIVO / META (R$)": t("sidebar.target.label"),
+            "CDI ANUAL BASE (% a.a.)": t("sidebar.cdi_base.label"),
+            "% DO CDI (ex: 110%:)": t("sidebar.rate.cdi"),
+        }
+        return mapeamento.get(texto_atual, texto_atual)
+
+    # -------------------------------------------------------------------------
     # Mudança de Estratégia (Prefixado vs CDI)
     # -------------------------------------------------------------------------
 
@@ -668,14 +873,16 @@ class ModernAppGUI(ctk.CTk):
         Parâmetros:
             choice (str): Texto selecionado no combo de estratégia.
         """
-        if "CDI" in choice:
-            self.lbl_taxa.configure(text="% DO CDI (ex: 110%):")
+        # Detecta se é CDI baseado no texto atual ou traduzido
+        é_cdi = "CDI" in choice or choice == t("sidebar.strategy.cdi")
+        if é_cdi:
+            self.lbl_taxa.configure(text=t("sidebar.rate.cdi"))
             self.entry_taxa.delete(0, "end")
             self.entry_taxa.insert(0, "110")
             self.combo_periodo_taxa.configure(state="disabled")
             self.frame_cdi_base.pack(fill="x", padx=16, pady=(0, 10), after=self.frame_taxa)
         else:
-            self.lbl_taxa.configure(text="TAXA DE RENDIMENTO (%):")
+            self.lbl_taxa.configure(text=t("sidebar.rate.label"))
             self.entry_taxa.delete(0, "end")
             self.entry_taxa.insert(0, "12.0")
             self.combo_periodo_taxa.configure(state="normal")
@@ -696,7 +903,7 @@ class ModernAppGUI(ctk.CTk):
 
         self.lbl_section = ctk.CTkLabel(
             self.frame_main,
-            text="Visão Geral do Portfólio • Projeção & Rendimento",
+            text=t("app.section.title"),
             font=("Segoe UI", 18, "bold"),
             text_color="#1C1C1E",
             anchor="w"
@@ -708,17 +915,17 @@ class ModernAppGUI(ctk.CTk):
         self.frame_cards.pack(fill="x", pady=(0, 12))
 
         # Cards estilizados
-        self.card_investido = MetricCard(self.frame_cards, "Total Aportado", "R$ 0,00")
-        self.card_juros = MetricCard(self.frame_cards, "Lucro Bruto", "R$ 0,00", badge_text="+0.0%")
-        self.card_total = MetricCard(self.frame_cards, "Montante Bruto", "R$ 0,00")
+        self.card_investido = MetricCard(self.frame_cards, t("card.total_invested"), "R$ 0,00")
+        self.card_juros = MetricCard(self.frame_cards, t("card.gross_profit"), "R$ 0,00", badge_text="+0.0%")
+        self.card_total = MetricCard(self.frame_cards, t("card.gross_balance"), "R$ 0,00")
         self.card_liquido = MetricCard(
             self.frame_cards,
-            "Líquido (Pós-IR)",
+            t("card.net_balance"),
             "R$ 0,00",
             badge_text="IR 15%",
             is_highlight=True
         )
-        self.card_meta = MetricCard(self.frame_cards, "Tempo p/ Meta", "-")
+        self.card_meta = MetricCard(self.frame_cards, t("card.time_to_target"), "-")
 
         self.cards_list = [
             self.card_investido,
@@ -889,19 +1096,19 @@ class ModernAppGUI(ctk.CTk):
             resultado = self.simulator_use_case.execute(input_data)
 
         except ValueError as exc:
-            messagebox.showerror("Erro de Validação", str(exc))
+            messagebox.showerror(t("error.simulation"), str(exc))
             return
         except Exception as exc:  # noqa: BLE001 - exceção inesperada na UI, exibida ao usuário
             messagebox.showerror(
-                "Erro Inesperado",
-                f"Ocorreu um erro inesperado ao processar a simulação: {exc}"
+                t("error.simulation"),
+                t("error.unexpected", error=exc)
             )
             return
 
         # Atualiza cards de métrica com os resultados
         pct_ganho = (resultado.total_interest / resultado.total_invested * 100) if resultado.total_invested > 0 else 0
-        badge_lucro = f"+{pct_ganho:.1f}%"
-        badge_ir = f"IR {resultado.ir_aliquota * 100:.1f}%"
+        badge_lucro = t("profit.badge", percent=pct_ganho)
+        badge_ir = t("ir.badge", aliquota=resultado.ir_aliquota)
 
         self.card_investido.update_value(formatar_moeda(resultado.total_invested))
         self.card_juros.update_value(formatar_moeda(resultado.total_interest), badge_text=badge_lucro)
@@ -911,13 +1118,13 @@ class ModernAppGUI(ctk.CTk):
 
         # Atualiza gráficos com os dados já calculados pelo serviço
         self.chart_controller.plot_timeline(
-            resultado.total_invested - resultado.total_interest,  # valor inicial aproximado
+            resultado.total_invested - resultado.total_interest,
             resultado.timeline
         )
         self.chart_controller.plot_evolution_bars(
             resultado.total_invested - resultado.total_interest,
             resultado.timeline,
-            target_amount=resultado.total_invested + resultado.total_interest,  # usa meta do input se disponível
+            target_amount=resultado.total_invested + resultado.total_interest,
             months_to_target=resultado.months_to_target,
             monthly_contribution=resultado.total_invested / resultado.total_months if resultado.total_months > 0 else 0,
             monthly_rate=resultado.taxa_mensal if hasattr(resultado, 'taxa_mensal') else 0.0,

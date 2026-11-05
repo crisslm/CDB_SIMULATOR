@@ -40,6 +40,7 @@ from src.use_cases.simulate_investment import (
 )
 from src.use_cases.financial_use_cases import FinancialUseCases
 from src.ui.gui.app import ModernAppGUI
+from src.i18n.manager import t
 
 
 # -------------------------------------------------------------------------
@@ -391,16 +392,16 @@ def test_strategy_change_shows_hides_cdi_base(gui_app):
     """
     # Inicialmente prefixada
     gui_app._on_strategy_change("Taxa Prefixada (% a.a. / a.m.)")
-    assert gui_app.lbl_taxa.cget("text") == "TAXA DE RENDIMENTO (%):"
+    assert gui_app.lbl_taxa.cget("text") == t("sidebar.rate.label")
 
     # Muda para CDI
     gui_app._on_strategy_change("Pós-fixado (% do CDI)")
-    assert gui_app.lbl_taxa.cget("text") == "% DO CDI (ex: 110%):"
+    assert gui_app.lbl_taxa.cget("text") == t("sidebar.rate.cdi")
     assert gui_app.entry_taxa.get() == "110"
 
     # Volta para prefixada
     gui_app._on_strategy_change("Taxa Prefixada (% a.a. / a.m.)")
-    assert gui_app.lbl_taxa.cget("text") == "TAXA DE RENDIMENTO (%):"
+    assert gui_app.lbl_taxa.cget("text") == t("sidebar.rate.label")
     assert gui_app.entry_taxa.get() == "12.0"
 
 
