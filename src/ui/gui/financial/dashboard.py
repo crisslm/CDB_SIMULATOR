@@ -47,42 +47,42 @@ from ..components import MetricCard, PillButton
 from .financial_charts import FinancialCharts
 
 
-# Mapeamento de labels amigáveis para TransactionType
+# Mapeamento de labels amigáveis para TransactionType (traduzido dinamicamente)
 TYPE_LABELS = {
-    "Receita": TransactionType.INCOME,
-    "Despesa": TransactionType.EXPENSE,
-    "Investimento": TransactionType.INVESTMENT,
+    t("financial.transaction.type.income"): TransactionType.INCOME,
+    t("financial.transaction.type.expense"): TransactionType.EXPENSE,
+    t("financial.transaction.type.investment"): TransactionType.INVESTMENT,
 }
 
 # Mapeamento reverso (valor do enum -> label amigável)
 TYPE_BY_VALUE = {item.value: label for label, item in TYPE_LABELS.items()}
 
-# Períodos disponíveis para filtro no dashboard
+# Períodos disponíveis para filtro no dashboard (traduzidos dinamicamente)
 PERIODS = [
-    "Mês atual",
-    "Mês anterior",
-    "Últimos 3 meses",
-    "Últimos 6 meses",
-    "Últimos 12 meses",
-    "Todo o período",
-    "Período personalizado",
+    t("financial.filter.period.current_month"),
+    t("financial.filter.period.previous_month"),
+    t("financial.filter.period.last_3_months"),
+    t("financial.filter.period.last_6_months"),
+    t("financial.filter.period.last_12_months"),
+    t("financial.filter.period.all"),
+    t("financial.filter.period.custom"),
 ]
 
 # Cores pré-definidas para categorias (nome amigável -> código hex)
 # Usadas no diálogo de categorias para seleção rápida de cor
 CATEGORY_COLORS = [
-    ("Verde", "#24C270"),
-    ("Azul", "#4F8CFF"),
-    ("Laranja", "#FF9F43"),
-    ("Vermelho", "#FF6B6B"),
-    ("Roxo", "#A970FF"),
-    ("Ciano", "#32B8C6"),
-    ("Rosa", "#F368E0"),
-    ("Cinza", "#8395A7"),
-    ("Amarelo", "#F9CA24"),
-    ("Azul Escuro", "#1C1C1E"),
-    ("Verde Escuro", "#107C41"),
-    ("Laranja Escuro", "#D9534F"),
+    (t("financial.category.color.green"), "#24C270"),
+    (t("financial.category.color.blue"), "#4F8CFF"),
+    (t("financial.category.color.orange"), "#FF9F43"),
+    (t("financial.category.color.red"), "#FF6B6B"),
+    (t("financial.category.color.purple"), "#A970FF"),
+    (t("financial.category.color.cyan"), "#32B8C6"),
+    (t("financial.category.color.pink"), "#F368E0"),
+    (t("financial.category.color.gray"), "#8395A7"),
+    (t("financial.category.color.yellow"), "#F9CA24"),
+    (t("financial.category.color.dark_blue"), "#1C1C1E"),
+    (t("financial.category.color.dark_green"), "#107C41"),
+    (t("financial.category.color.dark_orange"), "#D9534F"),
 ]
 
 
@@ -124,7 +124,7 @@ class CategoryDialog(ctk.CTkToplevel):
         super().__init__(dashboard.winfo_toplevel())
         self.dashboard, self.service, self.palette = dashboard, dashboard.service, dashboard.palette
         self.edit_id = None  # ID da categoria em edição (None = adicionando nova)
-        self.title("Gerenciar categorias")
+        self.title(t("financial.dialog.title"))
         self.geometry("580x620")
         self.minsize(440, 480)
         self.configure(fg_color=self.palette["bg_root"])
@@ -178,7 +178,7 @@ class CategoryDialog(ctk.CTkToplevel):
             - Lista rolável de categorias existentes.
         """
         header = ctk.CTkLabel(
-            self, text="Categorias",
+            self, text=t("financial.dialog.header"),
             font=("Segoe UI", 18, "bold"),
             text_color=self.palette["text"]
         )
@@ -194,7 +194,7 @@ class CategoryDialog(ctk.CTkToplevel):
         )
         form.pack(fill="x", padx=18, pady=(0, 10))
 
-        self.name_entry = self._input(form, "Nome da categoria")
+        self.name_entry = self._input(form, t("financial.dialog.name_placeholder"))
         self.type_combo = ctk.CTkComboBox(
             form, values=list(TYPE_LABELS), height=36, corner_radius=10,
             command=lambda _: None
@@ -210,10 +210,10 @@ class CategoryDialog(ctk.CTkToplevel):
         self.color_combo.grid(row=0, column=2, padx=5, pady=12)
         form.grid_columnconfigure(0, weight=1)
 
-        self.type_combo.set("Despesa")
+        self.type_combo.set(list(TYPE_LABELS)[1] if len(TYPE_LABELS) > 1 else list(TYPE_LABELS)[0])
 
         self.save_button = PillButton(
-            form, text="Adicionar", command=self._save,
+            form, text=t("financial.dialog.add"), command=self._save,
             variant="primary", width=110
         )
         self.save_button.grid(row=0, column=3, padx=(5, 12), pady=12)
@@ -261,7 +261,7 @@ class CategoryDialog(ctk.CTkToplevel):
             child.destroy()
 
         for category in self.service.categories(active_only=False):
-            state = "" if category.active else " · arquivada"
+            state = "" if category.active else f" · {t('financial.dialog.state.archived')}"
             is_editing = self.edit_id == category.id
 
             if is_editing:
@@ -284,14 +284,14 @@ class CategoryDialog(ctk.CTkToplevel):
                     text_color="#FFFFFF", font=("Segoe UI", 12)
                 ).pack(side="left", fill="x", expand=True, pady=7)
                 ctk.CTkButton(
-                    row, text="Editar", width=54, height=28, corner_radius=9,
+                    row, text=t("financial.dialog.edit"), width=54, height=28, corner_radius=9,
                     fg_color=self.palette["accent_text"],
                     hover_color=self.palette["accent_bg"],
                     text_color="#FFFFFF",
                     command=lambda item=category: self._edit(item)
                 ).pack(side="right", padx=3)
                 ctk.CTkButton(
-                    row, text="Remover", width=72, height=28, corner_radius=9,
+                    row, text=t("financial.dialog.remove"), width=72, height=28, corner_radius=9,
                     fg_color="#D9534F", hover_color="#B94440",
                     text_color="#FFFFFF",
                     command=lambda item=category: self._delete(item)
@@ -316,14 +316,14 @@ class CategoryDialog(ctk.CTkToplevel):
                     text_color=self.palette["text"], font=("Segoe UI", 12)
                 ).pack(side="left", fill="x", expand=True, pady=7)
                 ctk.CTkButton(
-                    row, text="Editar", width=54, height=28, corner_radius=9,
+                    row, text=t("financial.dialog.edit"), width=54, height=28, corner_radius=9,
                     fg_color=self.palette["surface_input"],
                     hover_color=self.palette["border_input"],
                     text_color=self.palette["text"],
                     command=lambda item=category: self._edit(item)
                 ).pack(side="right", padx=3)
                 ctk.CTkButton(
-                    row, text="Remover", width=72, height=28, corner_radius=9,
+                    row, text=t("financial.dialog.remove"), width=72, height=28, corner_radius=9,
                     fg_color="#D9534F", hover_color="#B94440",
                     command=lambda item=category: self._delete(item)
                 ).pack(side="right", padx=(3, 9))
@@ -388,11 +388,11 @@ class CategoryDialog(ctk.CTkToplevel):
             self.edit_id = None
             self.name_entry.delete(0, "end")
             self.color_combo.set(CATEGORY_COLORS[0][0])
-            self.save_button.configure(text="Adicionar")
+            self.save_button.configure(text=t("financial.dialog.add"))
             self._render_list()
             self.dashboard.refresh()
         except ValueError as exc:
-            messagebox.showerror("Categoria", str(exc), parent=self)
+            messagebox.showerror(t("financial.dialog.title"), str(exc), parent=self)
 
     def _delete(self, category):
         """
@@ -406,8 +406,8 @@ class CategoryDialog(ctk.CTkToplevel):
             category (FinancialCategory): Categoria a ser removida.
         """
         if not messagebox.askyesno(
-            "Remover categoria",
-            f"Remover '{category.name}'?\nSe ela possuir lançamentos, será arquivada para preservar o histórico.",
+            t("financial.dialog.remove_confirm_title"),
+            t("financial.dialog.remove_confirm_msg", name=category.name),
             parent=self
         ):
             return
@@ -415,14 +415,14 @@ class CategoryDialog(ctk.CTkToplevel):
             result = self.service.delete_or_archive_category(category.id)
             if result == "archived":
                 messagebox.showinfo(
-                    "Categoria arquivada",
-                    "A categoria possui lançamentos e foi arquivada com segurança.",
+                    t("financial.dialog.archived_title"),
+                    t("financial.dialog.archived_msg"),
                     parent=self
                 )
             self._render_list()
             self.dashboard.refresh()
         except ValueError as exc:
-            messagebox.showerror("Categoria", str(exc), parent=self)
+            messagebox.showerror(t("financial.dialog.title"), str(exc), parent=self)
 
 
 # =============================================================================
@@ -746,14 +746,14 @@ class FinancialDashboard(ctk.CTkFrame):
 
         if not enc_file.exists():
             messagebox.showwarning(
-                "Backup",
-                "Nenhum banco de dados criptografado encontrado para fazer backup.",
+                t("financial.backup.title"),
+                t("financial.backup.no_db"),
                 parent=self.winfo_toplevel()
             )
             return
 
         destino = filedialog.askdirectory(
-            title="Escolha a pasta para salvar o backup",
+            title=t("financial.backup.select_title"),
             parent=self.winfo_toplevel()
         )
         if not destino:
@@ -765,17 +765,14 @@ class FinancialDashboard(ctk.CTkFrame):
             if key_file.exists():
                 shutil.copy2(key_file, destino_path / ".db_key")
             messagebox.showinfo(
-                "Backup",
-                "Backup concluído com sucesso!\n\n"
-                "Arquivos salvos:\n- financial.sqlite3.enc\n- .db_key\n\n"
-                "Guarde o arquivo .db_key em local seguro: sem ele, "
-                "não é possível restaurar os dados.",
+                t("financial.backup.title"),
+                t("financial.backup.success"),
                 parent=self.winfo_toplevel()
             )
         except Exception as exc:
             messagebox.showerror(
-                "Erro no Backup",
-                f"Não foi possível fazer o backup: {exc}",
+                t("financial.backup.error_title"),
+                t("financial.backup.error_msg", error=exc),
                 parent=self.winfo_toplevel()
             )
 
@@ -807,8 +804,8 @@ class FinancialDashboard(ctk.CTkFrame):
 
         if not enc_file.exists():
             messagebox.showerror(
-                "Erro na Restauração",
-                "Arquivo financial.sqlite3.enc não encontrado na pasta selecionada.",
+                t("financial.restore.error_title"),
+                t("financial.restore.no_file"),
                 parent=self.winfo_toplevel()
             )
             return
@@ -818,15 +815,14 @@ class FinancialDashboard(ctk.CTkFrame):
             if key_file.exists():
                 shutil.copy2(key_file, db_dir / ".db_key")
             messagebox.showinfo(
-                "Restauração",
-                "Banco de dados restaurado com sucesso!\n\n"
-                "Reinicie a aplicação para aplicar as alterações.",
+                t("financial.restore.title"),
+                t("financial.restore.success"),
                 parent=self.winfo_toplevel()
             )
         except Exception as exc:
             messagebox.showerror(
-                "Erro na Restauração",
-                f"Não foi possível restaurar o backup: {exc}",
+                t("financial.restore.error_title"),
+                t("financial.restore.error_msg", error=exc),
                 parent=self.winfo_toplevel()
             )
 
@@ -837,7 +833,7 @@ class FinancialDashboard(ctk.CTkFrame):
         Se o usuário selecionar "Período personalizado", exibe campos
         de início e fim. Caso contrário, esconde-os.
         """
-        if value == "Período personalizado":
+        if value == t("financial.filter.period.custom"):
             self.custom_start.grid(row=1, column=1, padx=4, pady=(0, 10))
             self.custom_end.grid(row=1, column=2, padx=4, pady=(0, 10))
         else:
@@ -934,7 +930,7 @@ class FinancialDashboard(ctk.CTkFrame):
             # Carrega transações apenas para o histórico detalhado
             transactions = self.service.transactions(**filters)
         except ValueError as exc:
-            messagebox.showerror("Filtros", str(exc), parent=self.winfo_toplevel())
+            messagebox.showerror(t("financial.error.filters_title"), str(exc), parent=self.winfo_toplevel())
             return
 
         # Atualiza cards de métrica
@@ -1032,7 +1028,7 @@ class FinancialDashboard(ctk.CTkFrame):
             if not existing:
                 ctk.CTkLabel(
                     self.history,
-                    text="Nenhuma movimentação encontrada neste período.",
+                    text=t("financial.history.empty"),
                     text_color=self.palette["text_muted"]
                 ).pack(pady=22)
             return
@@ -1136,7 +1132,7 @@ class FinancialDashboard(ctk.CTkFrame):
             self._clear_form()
             self.refresh()
         except ValueError as exc:
-            messagebox.showerror("Lançamento", str(exc), parent=self.winfo_toplevel())
+            messagebox.showerror(t("financial.error.transaction_title"), str(exc), parent=self.winfo_toplevel())
 
     def _start_edit(self, item: FinancialTransaction):
         """
@@ -1185,7 +1181,7 @@ class FinancialDashboard(ctk.CTkFrame):
         self.occurred_on.delete(0, "end")
         self.occurred_on.insert(0, date.today().strftime("%d/%m/%Y"))
         self._refresh_form_categories()
-        self.save_transaction.configure(text="Adicionar")
+        self.save_transaction.configure(text=t("financial.form.add"))
         self.cancel_edit.grid_remove()
         self.refresh()
 
@@ -1199,8 +1195,8 @@ class FinancialDashboard(ctk.CTkFrame):
             item (FinancialTransaction): Transação a ser excluída.
         """
         if messagebox.askyesno(
-            "Excluir lançamento",
-            f"Excluir '{item.description}'? Esta ação não pode ser desfeita.",
+            t("financial.transaction.delete_confirm_title"),
+            t("financial.transaction.delete_confirm_msg", description=item.description),
             parent=self.winfo_toplevel()
         ):
             try:
@@ -1208,7 +1204,7 @@ class FinancialDashboard(ctk.CTkFrame):
                 self.refresh()
             except ValueError as exc:
                 messagebox.showerror(
-                    "Lançamento", str(exc), parent=self.winfo_toplevel()
+                    t("financial.error.transaction_title"), str(exc), parent=self.winfo_toplevel()
                 )
 
     def apply_layout(self, width: int):

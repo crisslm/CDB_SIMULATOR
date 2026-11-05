@@ -764,43 +764,23 @@ class ModernAppGUI(ctk.CTk):
         nome_atual = idiomas.get(self.language, "Português")
         self.combo_idioma.set(nome_atual)
 
-        # Estratégia
-        self.lbl_estrategia = None  # já existe, vamos atualizar via labels_muted
-        # Reconstroi valores do combo de estratégia
+        # Labels de campos da sidebar
+        self.lbl_estrategia.configure(text=t("sidebar.strategy.label"))
+        self.lbl_inicial.configure(text=t("sidebar.initial.label"))
+        self.lbl_mensal.configure(text=t("sidebar.monthly.label"))
+        self.lbl_taxa.configure(text=t("sidebar.rate.label"))
+        self.lbl_cdi_base.configure(text=t("sidebar.cdi_base.label"))
+        self.lbl_periodo.configure(text=t("sidebar.period.label"))
+        self.lbl_meta.configure(text=t("sidebar.target.label"))
+
+        # Combo de estratégia
         self.combo_estrategia.configure(values=[t("sidebar.strategy.prefix"), t("sidebar.strategy.cdi")])
-        # Mantém a seleção atual traduzindo de volta
+        # Mantém a seleção atual
         atual = self.combo_estrategia.get()
-        if "CDI" in atual or "CDI" in t("sidebar.strategy.cdi"):
+        if "CDI" in atual or atual == t("sidebar.strategy.cdi"):
             self.combo_estrategia.set(t("sidebar.strategy.cdi"))
         else:
             self.combo_estrategia.set(t("sidebar.strategy.prefix"))
-
-        # Labels de campos
-        self.lbl_inicial = None
-        self.lbl_mensal = None
-        self.lbl_taxa.configure(text=t("sidebar.rate.label"))
-        self.lbl_cdi_base.configure(text=t("sidebar.cdi_base.label"))
-        self.lbl_periodo = None
-        self.lbl_meta = None
-
-        # Atualiza labels muted (precisamos recriar ou acessar diretamente)
-        # Para simplificar, atualizamos os labels conhecidos
-        for lbl in self._labels_muted:
-            # Cada label tem um texto específico; mapeamos por conteúdo aproximado
-            texto_atual = lbl.cget("text")
-            novo_texto = self._traduzir_label_sidebar(texto_atual)
-            lbl.configure(text=novo_texto)
-
-        # Placeholder dos campos de entrada (CustomTkinter usa placeholder_text)
-        # Não temos placeholders nos entries atuais, então pulamos
-
-        # Botão simular
-        self.btn_simular.configure(text=t("sidebar.simulate.button"))
-
-        # Combo de período da taxa
-        # Mantém valores em português/inglês conforme contexto (não traduzido no JSON)
-        # O combo de período da taxa usa valores fixos "% ao ano" / "% ao mês"
-        # que são específicos do Brasil; mantemos como estão ou traduzimos
 
         # Combo de tipo de período (Anos/Meses)
         self.combo_tipo_periodo.configure(values=[t("sidebar.period.years"), t("sidebar.period.months")])
@@ -810,14 +790,12 @@ class ModernAppGUI(ctk.CTk):
         elif atual_periodo in ["Meses", "Months"]:
             self.combo_tipo_periodo.set(t("sidebar.period.months"))
 
+        # Botão simular
+        self.btn_simular.configure(text=t("sidebar.simulate.button"))
+
         # Título da seção principal
         if hasattr(self, "lbl_section"):
             self.lbl_section.configure(text=t("app.section.title"))
-
-        # Atualiza cards se existirem
-        if hasattr(self, "cards_list"):
-            # Os cards serão atualizados na próxima simulação
-            pass
 
         # Atualiza dashboard financeiro se existir
         if hasattr(self, "financial_dashboard"):
@@ -826,31 +804,6 @@ class ModernAppGUI(ctk.CTk):
 
         # Persiste idioma
         self._save_language()
-
-    def _traduzir_label_sidebar(self, texto_atual: str) -> str:
-        """
-        Mapeia um texto de label da sidebar para a chave de tradução correspondente.
-
-        Como os labels são criados com textos hardcoded originalmente, este método
-        faz o mapeamento reverso para atualizar quando o idioma muda.
-
-        Parâmetros:
-            texto_atual (str): Texto atual do label.
-
-        Retorna:
-            str: Texto traduzido.
-        """
-        mapeamento = {
-            "TIPO DE INVESTIMENTO": t("sidebar.strategy.label"),
-            "VALOR INICIAL (R$)": t("sidebar.initial.label"),
-            "APORTE MENSAL (R$)": t("sidebar.monthly.label"),
-            "TAXA DE RENDIMENTO (%)": t("sidebar.rate.label"),
-            "PRAZO DE INVESTIMENTO": t("sidebar.period.label"),
-            "OBJETIVO / META (R$)": t("sidebar.target.label"),
-            "CDI ANUAL BASE (% a.a.)": t("sidebar.cdi_base.label"),
-            "% DO CDI (ex: 110%:)": t("sidebar.rate.cdi"),
-        }
-        return mapeamento.get(texto_atual, texto_atual)
 
     # -------------------------------------------------------------------------
     # Mudança de Estratégia (Prefixado vs CDI)
@@ -1101,7 +1054,7 @@ class ModernAppGUI(ctk.CTk):
         except Exception as exc:  # noqa: BLE001 - exceção inesperada na UI, exibida ao usuário
             messagebox.showerror(
                 t("error.simulation"),
-                t("error.unexpected", error=exc)
+                t("error.unexpected", error=str(exc))
             )
             return
 
@@ -1117,15 +1070,20 @@ class ModernAppGUI(ctk.CTk):
         self.card_meta.update_value(formatar_tempo(resultado.months_to_target))
 
         # Atualiza gráficos com os dados já calculados pelo serviço
+        # initial_amount é o valor inicial real da simulação
+        initial_amount = input_data.inicial if isinstance(input_data.inicial, (int, float)) else 0.0
+        # target_amount é a meta que o usuário digitou
+        target_amount = input_data.meta if isinstance(input_data.meta, (int, float)) else 0.0
+
         self.chart_controller.plot_timeline(
-            resultado.total_invested - resultado.total_interest,
+            initial_amount,
             resultado.timeline
         )
         self.chart_controller.plot_evolution_bars(
-            resultado.total_invested - resultado.total_interest,
+            initial_amount,
             resultado.timeline,
-            target_amount=resultado.total_invested + resultado.total_interest,
+            target_amount=target_amount,
             months_to_target=resultado.months_to_target,
-            monthly_contribution=resultado.total_invested / resultado.total_months if resultado.total_months > 0 else 0,
+            monthly_contribution=input_data.mensal if isinstance(input_data.mensal, (int, float)) else 0.0,
             monthly_rate=resultado.taxa_mensal if hasattr(resultado, 'taxa_mensal') else 0.0,
         )
